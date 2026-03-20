@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RED + OPS on RYM
 // @namespace    https://github.com/tomerh2001/redacted-on-rym-userscript
-// @version      0.2.1
+// @version      0.2.2
 // @description  Show whether the current Rate Your Music album page already exists on RED or OPS.
 // @author       Tomer Horowitz
 // @match        https://rateyourmusic.com/release/album/*
@@ -136,6 +136,13 @@
     return scoredCandidates[0]?.element ?? null;
   }
   function findBadgeMount(doc = document) {
+    const preferredIntegrationContainer = doc.querySelector("#media_link_button_container_top");
+    if (preferredIntegrationContainer) {
+      return {
+        mode: "integration",
+        container: preferredIntegrationContainer
+      };
+    }
     const integrationContainer = findIntegrationContainer(doc);
     if (integrationContainer) {
       return {

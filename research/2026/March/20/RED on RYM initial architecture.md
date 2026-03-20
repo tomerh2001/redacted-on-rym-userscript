@@ -62,13 +62,15 @@ cluster is detectable.
   the tracker documentation.
 - Match locally using normalized artist and title keys so the script stays
   conservative about claiming a hit.
-- Insert the badges as a separate row below the existing streaming-links
-  cluster when detectable, otherwise fall back to the title area.
+- Prefer RYM's `#media_link_button_container_top` as the badge anchor and
+  insert the badges as a separate row below it; otherwise fall back to a
+  streaming-links heuristic and then the title area.
 
 ## Risks
 
-- RYM DOM heuristics may miss the streaming-links cluster on some themes or
-  future markup revisions.
+- RYM may still revise the media-links markup, so the explicit
+  `#media_link_button_container_top` anchor could require a future selector
+  update.
 - Exact-ish matching may miss releases with materially different tracker group
   titles, translations, or unusual artist-credit shapes.
 - Live tracker verification still needs an explicit tracker-safety notice

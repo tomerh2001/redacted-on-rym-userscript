@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   decodeRymSlug,
+  findBadgeMount,
   findLikelyReleaseYear,
   isSupportedIntegrationHref,
   normalizeMatchKey,
@@ -49,4 +50,26 @@ test('isSupportedIntegrationHref identifies likely streaming or buy-link hosts',
   assert.equal(isSupportedIntegrationHref('https://open.spotify.com/album/123'), true);
   assert.equal(isSupportedIntegrationHref('https://music.apple.com/us/album/sample/123'), true);
   assert.equal(isSupportedIntegrationHref('https://rateyourmusic.com/release/album/foo/bar/'), false);
+});
+
+test('findBadgeMount prefers media_link_button_container_top when present', () => {
+  const preferredContainer = { id: 'media_link_button_container_top' };
+  const doc = {
+    querySelector(selector) {
+      if (selector === '#media_link_button_container_top') {
+        return preferredContainer;
+      }
+
+      if (selector === 'h1') {
+        return null;
+      }
+
+      return null;
+    },
+  };
+
+  assert.deepEqual(findBadgeMount(doc), {
+    mode: 'integration',
+    container: preferredContainer,
+  });
 });
