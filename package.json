@@ -1,0 +1,32 @@
+{
+  "name": "redacted-on-rym-userscript",
+  "version": "0.1.0",
+  "description": "Violentmonkey userscript that shows whether a Rate Your Music album page already has a match on RED.",
+  "author": "Tomer Horowitz",
+  "type": "module",
+  "main": "./dist/redacted-on-rym.user.js",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "node scripts/build-userscript.mjs",
+    "test": "node --test",
+    "ci": "npm test && npm run build"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.4"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tomerh2001/redacted-on-rym-userscript.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tomerh2001/redacted-on-rym-userscript/issues"
+  },
+  "homepage": "https://github.com/tomerh2001/redacted-on-rym-userscript#readme",
+  "packageManager": "npm@9.2.0"
+}
