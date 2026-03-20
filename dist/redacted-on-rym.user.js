@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RED + OPS on RYM
 // @namespace    https://github.com/tomerh2001/redacted-on-rym-userscript
-// @version      0.2.4
+// @version      0.2.5
 // @description  Show whether the current Rate Your Music album page already exists on RED or OPS.
 // @author       Tomer Horowitz
 // @match        https://rateyourmusic.com/release/album/*
@@ -21,15 +21,6 @@
   // src/rym.js
   var RELEASE_PATH_RE = /^\/release\/([^/]+)\/([^/]+)\/([^/]+)\/?$/i;
   var PREFERRED_BADGE_MOUNT_SELECTOR = "#media_link_button_container_top";
-  var STREAMING_HOST_SUFFIXES = [
-    "spotify.com",
-    "apple.com",
-    "tidal.com",
-    "deezer.com",
-    "bandcamp.com",
-    "soundcloud.com",
-    "youtube.com"
-  ];
   function normalizeWhitespace(value) {
     return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
   }
@@ -92,80 +83,6 @@
   }
   function normalizeMatchKey(value) {
     return normalizeWhitespace(String(value ?? "")).normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[&+]/g, " and ").replace(/['’`´]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").toLowerCase().trim();
-  }
-  function isSupportedIntegrationHref(href) {
-    try {
-      const url = new URL(href, "https://rateyourmusic.com");
-      const hostname = url.hostname.toLowerCase();
-      return STREAMING_HOST_SUFFIXES.some((suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`));
-    } catch {
-      return false;
-    }
-  }
-  function countServiceLinks(container, serviceLinks) {
-    return serviceLinks.filter((link) => container.contains(link)).length;
-  }
-  function collectCandidateContainers(link) {
-    const candidates = [];
-    let current = link.parentElement;
-    let depth = 0;
-    const stopAt = link.ownerDocument?.body ?? null;
-    while (current && current !== stopAt && depth < 6) {
-      candidates.push({ element: current, depth });
-      current = current.parentElement;
-      depth += 1;
-    }
-    return candidates;
-  }
-  function findIntegrationContainer(doc = document) {
-    const serviceLinks = [...doc.querySelectorAll("a[href]")].filter((link) => isSupportedIntegrationHref(link.href));
-    if (serviceLinks.length < 2) {
-      return null;
-    }
-    const candidates = serviceLinks.flatMap((link) => collectCandidateContainers(link));
-    const scoredCandidates = candidates.map((candidate) => {
-      const serviceLinkCount = countServiceLinks(candidate.element, serviceLinks);
-      const allLinkCount = candidate.element.querySelectorAll("a[href]").length;
-      const descendantCount = candidate.element.querySelectorAll("*").length;
-      return {
-        ...candidate,
-        serviceLinkCount,
-        allLinkCount,
-        descendantCount
-      };
-    }).filter((candidate) => candidate.serviceLinkCount >= 2 && candidate.allLinkCount <= 12 && candidate.descendantCount <= 80).sort((left, right) => left.allLinkCount - right.allLinkCount || left.descendantCount - right.descendantCount || right.serviceLinkCount - left.serviceLinkCount || left.depth - right.depth);
-    return scoredCandidates[0]?.element ?? null;
-  }
-  function findBadgeMount(doc = document) {
-    const preferredIntegrationContainer = doc.querySelector(PREFERRED_BADGE_MOUNT_SELECTOR);
-    if (preferredIntegrationContainer) {
-      return {
-        mode: "integration",
-        container: preferredIntegrationContainer,
-        preferred: true
-      };
-    }
-    const integrationContainer = findIntegrationContainer(doc);
-    if (integrationContainer) {
-      return {
-        mode: "integration",
-        container: integrationContainer,
-        preferred: false
-      };
-    }
-    const heading = doc.querySelector("h1");
-    if (heading) {
-      return {
-        mode: "heading",
-        container: heading,
-        preferred: false
-      };
-    }
-    return {
-      mode: "body",
-      container: doc.body,
-      preferred: false
-    };
   }
   function extractReleaseMetadata(doc = document, locationObject = window.location) {
     const pathInfo = parseReleasePath(locationObject?.pathname ?? "");
@@ -315,7 +232,6 @@
   var STYLE_ID = "red-on-rym-styles";
   var BADGE_ATTR = "data-red-on-rym-badge";
   var MOUNT_OBSERVER_ATTR = "data-red-on-rym-observing";
-  var MOUNT_RETRY_TIMEOUT_MS = 5e3;
   function normalizeCredential(rawValue) {
     return typeof rawValue === "string" ? rawValue.trim() : "";
   }
@@ -512,44 +428,56 @@
       mount.container.insertAdjacentElement("afterend", host);
     }
   }
+  function disconnectMountObserver(host) {
+    host.redOnRymMountObserver?.disconnect();
+    delete host.redOnRymMountObserver;
+    host.removeAttribute(MOUNT_OBSERVER_ATTR);
+  }
   function watchForPreferredMount(host) {
-    if (host.getAttribute(MOUNT_OBSERVER_ATTR) === "true" || !document.body) {
+    if (host.redOnRymMountObserver || !document.body) {
       return;
     }
     host.setAttribute(MOUNT_OBSERVER_ATTR, "true");
-    const observer = new MutationObserver(() => {
+    const moveHostToPreferredMount = () => {
       const preferredContainer = document.querySelector(PREFERRED_BADGE_MOUNT_SELECTOR);
       if (!preferredContainer) {
-        return;
+        return false;
       }
       placeBadgeHost(host, {
         mode: "integration",
         container: preferredContainer,
         preferred: true
       });
-      host.removeAttribute(MOUNT_OBSERVER_ATTR);
-      observer.disconnect();
+      disconnectMountObserver(host);
+      return true;
+    };
+    if (moveHostToPreferredMount()) {
+      return;
+    }
+    const observer = new MutationObserver(() => {
+      moveHostToPreferredMount();
     });
+    host.redOnRymMountObserver = observer;
     observer.observe(document.body, {
       childList: true,
       subtree: true
     });
-    window.setTimeout(() => {
-      observer.disconnect();
-      host.removeAttribute(MOUNT_OBSERVER_ATTR);
-    }, MOUNT_RETRY_TIMEOUT_MS);
   }
   function ensureBadgeHost() {
     const host = document.querySelector(`[${BADGE_ATTR}]`) ?? document.createElement("div");
     if (!host.hasAttribute(BADGE_ATTR)) {
       host.setAttribute(BADGE_ATTR, "");
     }
-    const mount = findBadgeMount(document);
-    placeBadgeHost(host, mount);
-    if (!mount.preferred) {
-      watchForPreferredMount(host);
+    const preferredContainer = document.querySelector(PREFERRED_BADGE_MOUNT_SELECTOR);
+    if (preferredContainer) {
+      placeBadgeHost(host, {
+        mode: "integration",
+        container: preferredContainer,
+        preferred: true
+      });
+      disconnectMountObserver(host);
     } else {
-      host.removeAttribute(MOUNT_OBSERVER_ATTR);
+      watchForPreferredMount(host);
     }
     return host;
   }

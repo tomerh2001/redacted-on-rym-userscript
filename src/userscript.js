@@ -1,10 +1,9 @@
 import { TRACKERS, lookupReleaseOnTracker } from './trackers.js';
-import { extractReleaseMetadata, findBadgeMount, PREFERRED_BADGE_MOUNT_SELECTOR } from './rym.js';
+import { extractReleaseMetadata, PREFERRED_BADGE_MOUNT_SELECTOR } from './rym.js';
 
 const STYLE_ID = 'red-on-rym-styles';
 const BADGE_ATTR = 'data-red-on-rym-badge';
 const MOUNT_OBSERVER_ATTR = 'data-red-on-rym-observing';
-const MOUNT_RETRY_TIMEOUT_MS = 5_000;
 
 function normalizeCredential(rawValue) {
   return typeof rawValue === 'string' ? rawValue.trim() : '';
@@ -222,19 +221,23 @@ function placeBadgeHost(host, mount) {
   }
 }
 
+function disconnectMountObserver(host) {
+  host.redOnRymMountObserver?.disconnect();
+  delete host.redOnRymMountObserver;
+  host.removeAttribute(MOUNT_OBSERVER_ATTR);
+}
+
 function watchForPreferredMount(host) {
-  if (host.getAttribute(MOUNT_OBSERVER_ATTR) === 'true' || !document.body) {
+  if (host.redOnRymMountObserver || !document.body) {
     return;
   }
 
   host.setAttribute(MOUNT_OBSERVER_ATTR, 'true');
 
-  // RYM finishes rendering the media links after our script sometimes runs.
-  // Keep a short-lived observer so we can move the badges into the intended row.
-  const observer = new MutationObserver(() => {
+  const moveHostToPreferredMount = () => {
     const preferredContainer = document.querySelector(PREFERRED_BADGE_MOUNT_SELECTOR);
     if (!preferredContainer) {
-      return;
+      return false;
     }
 
     placeBadgeHost(host, {
@@ -242,19 +245,25 @@ function watchForPreferredMount(host) {
       container: preferredContainer,
       preferred: true,
     });
-    host.removeAttribute(MOUNT_OBSERVER_ATTR);
-    observer.disconnect();
+    disconnectMountObserver(host);
+    return true;
+  };
+
+  if (moveHostToPreferredMount()) {
+    return;
+  }
+
+  // RYM finishes rendering the media links after our script sometimes runs.
+  // Do not mount anywhere else first; wait until the exact target exists.
+  const observer = new MutationObserver(() => {
+    moveHostToPreferredMount();
   });
+  host.redOnRymMountObserver = observer;
 
   observer.observe(document.body, {
     childList: true,
     subtree: true,
   });
-
-  window.setTimeout(() => {
-    observer.disconnect();
-    host.removeAttribute(MOUNT_OBSERVER_ATTR);
-  }, MOUNT_RETRY_TIMEOUT_MS);
 }
 
 function ensureBadgeHost() {
@@ -263,13 +272,16 @@ function ensureBadgeHost() {
     host.setAttribute(BADGE_ATTR, '');
   }
 
-  const mount = findBadgeMount(document);
-  placeBadgeHost(host, mount);
-
-  if (!mount.preferred) {
-    watchForPreferredMount(host);
+  const preferredContainer = document.querySelector(PREFERRED_BADGE_MOUNT_SELECTOR);
+  if (preferredContainer) {
+    placeBadgeHost(host, {
+      mode: 'integration',
+      container: preferredContainer,
+      preferred: true,
+    });
+    disconnectMountObserver(host);
   } else {
-    host.removeAttribute(MOUNT_OBSERVER_ATTR);
+    watchForPreferredMount(host);
   }
 
   return host;

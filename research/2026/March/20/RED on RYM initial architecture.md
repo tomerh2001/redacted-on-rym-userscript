@@ -71,6 +71,10 @@ cluster is detectable.
 - Treat heuristic integration containers as provisional only; keep watching
   until the exact `#media_link_button_container_top` target exists so we do not
   get stuck under RYM's alternate small-screen metadata layout.
+- For this page family, it is safer not to mount at all until
+  `#media_link_button_container_top` exists than to show chips in the wrong
+  subtree. The host can hold its content while detached and then insert once
+  the exact target arrives.
 
 ## Risks
 
