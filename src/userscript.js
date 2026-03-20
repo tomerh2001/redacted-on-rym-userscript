@@ -1,11 +1,10 @@
-import { lookupReleaseOnRed } from './red.js';
+import { TRACKERS, lookupReleaseOnTracker } from './trackers.js';
 import { extractReleaseMetadata, findBadgeMount } from './rym.js';
 
-const API_KEY_STORAGE_KEY = 'redApiKey';
 const STYLE_ID = 'red-on-rym-styles';
 const BADGE_ATTR = 'data-red-on-rym-badge';
 
-function normalizeApiKey(rawValue) {
+function normalizeCredential(rawValue) {
   return typeof rawValue === 'string' ? rawValue.trim() : '';
 }
 
@@ -20,6 +19,8 @@ function addStyles() {
     [${BADGE_ATTR}] {
       display: inline-flex;
       align-items: center;
+      flex-wrap: wrap;
+      gap: 0.45rem;
       margin-left: 0.5rem;
       vertical-align: middle;
     }
@@ -101,20 +102,20 @@ function addStyles() {
   document.head.append(style);
 }
 
-function getStoredApiKey() {
+function getStoredCredential(storageKey) {
   if (typeof GM_getValue !== 'function') {
     return '';
   }
 
-  return normalizeApiKey(GM_getValue(API_KEY_STORAGE_KEY, ''));
+  return normalizeCredential(GM_getValue(storageKey, ''));
 }
 
-function setStoredApiKey(value) {
+function setStoredCredential(storageKey, value) {
   if (typeof GM_setValue !== 'function') {
     return;
   }
 
-  GM_setValue(API_KEY_STORAGE_KEY, normalizeApiKey(value));
+  GM_setValue(storageKey, normalizeCredential(value));
 }
 
 function registerMenuCommands() {
@@ -122,32 +123,34 @@ function registerMenuCommands() {
     return;
   }
 
-  const currentApiKey = getStoredApiKey();
-  GM_registerMenuCommand(
-    `Set RED API key${currentApiKey ? ' (configured)' : ''}`,
-    () => {
-      const nextValue = window.prompt(
-        'Paste a RED API key for this script. Leave blank to clear it.',
-        currentApiKey,
-      );
-      if (nextValue === null) {
-        return;
-      }
+  for (const tracker of TRACKERS) {
+    const currentCredential = getStoredCredential(tracker.credentialStorageKey);
+    GM_registerMenuCommand(
+      `Set ${tracker.credentialMenuLabel}${currentCredential ? ' (configured)' : ''}`,
+      () => {
+        const nextValue = window.prompt(
+          `Paste a ${tracker.credentialMenuLabel} for this script. Leave blank to clear it.`,
+          currentCredential,
+        );
+        if (nextValue === null) {
+          return;
+        }
 
-      setStoredApiKey(nextValue);
-      window.location.reload();
-    },
-  );
+        setStoredCredential(tracker.credentialStorageKey, nextValue);
+        window.location.reload();
+      },
+    );
 
-  if (currentApiKey) {
-    GM_registerMenuCommand('Clear RED API key', () => {
-      setStoredApiKey('');
-      window.location.reload();
-    });
+    if (currentCredential) {
+      GM_registerMenuCommand(`Clear ${tracker.credentialMenuLabel}`, () => {
+        setStoredCredential(tracker.credentialStorageKey, '');
+        window.location.reload();
+      });
+    }
   }
 }
 
-function requestJson(url, apiKey) {
+function requestJson(url, authorizationHeader) {
   return new Promise((resolve, reject) => {
     GM_xmlhttpRequest({
       method: 'GET',
@@ -156,41 +159,41 @@ function requestJson(url, apiKey) {
       timeout: 15_000,
       headers: {
         Accept: 'application/json',
-        Authorization: apiKey,
+        Authorization: authorizationHeader,
       },
       onload(response) {
         if (response.status === 429) {
-          reject(new Error('RED rate limit reached'));
+          reject(new Error('Tracker rate limit reached'));
           return;
         }
 
         if (response.status === 401 || response.status === 403) {
-          reject(new Error('RED rejected the API key'));
+          reject(new Error('Tracker rejected the credential'));
           return;
         }
 
         if (response.status < 200 || response.status >= 300) {
-          reject(new Error(`RED responded with ${response.status}`));
+          reject(new Error(`Tracker responded with ${response.status}`));
           return;
         }
 
         try {
           const payload = JSON.parse(response.responseText);
           if (payload?.status !== 'success') {
-            reject(new Error('RED returned an unsuccessful API response'));
+            reject(new Error('Tracker returned an unsuccessful API response'));
             return;
           }
 
           resolve(payload);
         } catch {
-          reject(new Error('RED returned invalid JSON'));
+          reject(new Error('Tracker returned invalid JSON'));
         }
       },
       ontimeout() {
-        reject(new Error('RED lookup timed out'));
+        reject(new Error('Tracker lookup timed out'));
       },
       onerror() {
-        reject(new Error('RED lookup failed'));
+        reject(new Error('Tracker lookup failed'));
       },
     });
   });
@@ -242,7 +245,7 @@ function renderBadge(state) {
 
   const label = document.createElement('span');
   label.className = 'red-on-rym-chip__label';
-  label.textContent = 'RED';
+  label.textContent = state.trackerLabel;
 
   const status = document.createElement('span');
   status.className = 'red-on-rym-chip__status';
@@ -252,9 +255,9 @@ function renderBadge(state) {
   return element;
 }
 
-function updateBadge(state) {
+function updateBadges(states) {
   const host = ensureBadgeHost();
-  host.replaceChildren(renderBadge(state));
+  host.replaceChildren(...states.map(renderBadge));
 }
 
 async function main() {
@@ -266,43 +269,69 @@ async function main() {
     return;
   }
 
-  const apiKey = getStoredApiKey();
-  if (!apiKey) {
-    updateBadge({
-      status: 'config',
-      label: 'add API key',
-      title: 'Set a limited RED API key from the Violentmonkey menu to enable lookups.',
-    });
-    return;
-  }
+  updateBadges(
+    TRACKERS.map(tracker => {
+      const credential = getStoredCredential(tracker.credentialStorageKey);
+      if (!credential) {
+        return {
+          trackerLabel: tracker.label,
+          status: 'config',
+          label: 'add key',
+          title: `Set a ${tracker.credentialMenuLabel} from the Violentmonkey menu to enable ${tracker.label} lookups.`,
+        };
+      }
 
-  updateBadge({
-    status: 'pending',
-    label: 'checking...',
-    title: `Checking RED for ${metadata.artist} - ${metadata.title}.`,
-  });
+      return {
+        trackerLabel: tracker.label,
+        status: 'pending',
+        label: 'checking...',
+        title: `Checking ${tracker.label} for ${metadata.artist} - ${metadata.title}.`,
+      };
+    }),
+  );
 
-  try {
-    const lookupResult = await lookupReleaseOnRed(metadata, apiKey, requestJson);
-    updateBadge({
-      status: lookupResult.status,
-      label: lookupResult.status === 'found' ? 'on site' : 'not found',
-      title: lookupResult.title,
-      url: lookupResult.url,
-    });
-  } catch (error) {
-    updateBadge({
-      status: 'error',
-      label: 'lookup failed',
-      title: error instanceof Error ? error.message : 'RED lookup failed.',
-    });
-  }
+  const results = await Promise.all(
+    TRACKERS.map(async tracker => {
+      const credential = getStoredCredential(tracker.credentialStorageKey);
+      if (!credential) {
+        return {
+          trackerLabel: tracker.label,
+          status: 'config',
+          label: 'add key',
+          title: `Set a ${tracker.credentialMenuLabel} from the Violentmonkey menu to enable ${tracker.label} lookups.`,
+        };
+      }
+
+      try {
+        const lookupResult = await lookupReleaseOnTracker(tracker, metadata, credential, requestJson);
+        return {
+          trackerLabel: tracker.label,
+          status: lookupResult.status,
+          label: lookupResult.status === 'found' ? 'on site' : 'not found',
+          title: lookupResult.title,
+          url: lookupResult.url,
+        };
+      } catch (error) {
+        return {
+          trackerLabel: tracker.label,
+          status: 'error',
+          label: 'lookup failed',
+          title: error instanceof Error ? error.message : `${tracker.label} lookup failed.`,
+        };
+      }
+    }),
+  );
+
+  updateBadges(results);
 }
 
 main().catch(() => {
-  updateBadge({
-    status: 'error',
-    label: 'lookup failed',
-    title: 'Unexpected userscript failure.',
-  });
+  updateBadges(
+    TRACKERS.map(tracker => ({
+      trackerLabel: tracker.label,
+      status: 'error',
+      label: 'lookup failed',
+      title: `Unexpected ${tracker.label} userscript failure.`,
+    })),
+  );
 });

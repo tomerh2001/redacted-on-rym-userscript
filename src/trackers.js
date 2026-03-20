@@ -1,11 +1,35 @@
 import { normalizeMatchKey } from './rym.js';
 
-const RED_BROWSE_ENDPOINT = 'https://redacted.sh/ajax.php?action=browse';
-const RED_GROUP_PAGE = 'https://redacted.sh/torrents.php';
-const RED_SEARCH_PAGE = 'https://redacted.sh/torrents.php';
 const RELEASE_TYPE_IDS = {
   album: '1',
 };
+
+export const TRACKERS = [
+  {
+    id: 'red',
+    label: 'RED',
+    browseEndpoint: 'https://redacted.sh/ajax.php?action=browse',
+    searchPage: 'https://redacted.sh/torrents.php',
+    groupPage: 'https://redacted.sh/torrents.php',
+    credentialStorageKey: 'redApiKey',
+    credentialMenuLabel: 'RED API key',
+    buildAuthorizationHeader(credential) {
+      return credential;
+    },
+  },
+  {
+    id: 'ops',
+    label: 'OPS',
+    browseEndpoint: 'https://orpheus.network/ajax.php?action=browse',
+    searchPage: 'https://orpheus.network/torrents.php',
+    groupPage: 'https://orpheus.network/torrents.php',
+    credentialStorageKey: 'opsApiToken',
+    credentialMenuLabel: 'OPS API token',
+    buildAuthorizationHeader(credential) {
+      return credential.toLowerCase().startsWith('token ') ? credential : `token ${credential}`;
+    },
+  },
+];
 
 function artistKeysMatch(leftValue, rightValue) {
   const leftKey = normalizeMatchKey(leftValue);
@@ -17,8 +41,8 @@ function artistKeysMatch(leftValue, rightValue) {
   return leftKey === rightKey || leftKey.includes(rightKey) || rightKey.includes(leftKey);
 }
 
-export function buildBrowseUrl(metadata) {
-  const url = new URL(RED_BROWSE_ENDPOINT);
+export function buildBrowseUrl(tracker, metadata) {
+  const url = new URL(tracker.browseEndpoint);
   url.searchParams.set('searchstr', `${metadata.artist} ${metadata.title}`.trim());
   url.searchParams.set('artistname', metadata.artist);
   url.searchParams.set('groupname', metadata.title);
@@ -36,8 +60,8 @@ export function buildBrowseUrl(metadata) {
   return url.toString();
 }
 
-export function buildSearchPageUrl(metadata) {
-  const url = new URL(RED_SEARCH_PAGE);
+export function buildSearchPageUrl(tracker, metadata) {
+  const url = new URL(tracker.searchPage);
   url.searchParams.set('searchstr', `${metadata.artist} ${metadata.title}`.trim());
   url.searchParams.set('artistname', metadata.artist);
   url.searchParams.set('groupname', metadata.title);
@@ -47,6 +71,12 @@ export function buildSearchPageUrl(metadata) {
     url.searchParams.set('releasetype', releaseType);
   }
 
+  return url.toString();
+}
+
+function buildGroupUrl(tracker, groupId) {
+  const url = new URL(tracker.groupPage);
+  url.searchParams.set('id', String(groupId));
   return url.toString();
 }
 
@@ -94,30 +124,27 @@ export function findBestGroupMatch(groups, metadata) {
   };
 }
 
-function buildGroupUrl(groupId) {
-  const url = new URL(RED_GROUP_PAGE);
-  url.searchParams.set('id', String(groupId));
-  return url.toString();
-}
-
-export async function lookupReleaseOnRed(metadata, apiKey, requestJson) {
-  const payload = await requestJson(buildBrowseUrl(metadata), apiKey);
+export async function lookupReleaseOnTracker(tracker, metadata, credential, requestJson) {
+  const payload = await requestJson(
+    buildBrowseUrl(tracker, metadata),
+    tracker.buildAuthorizationHeader(credential),
+  );
   const groups = Array.isArray(payload?.response?.results) ? payload.response.results : [];
   const { match, candidates } = findBestGroupMatch(groups, metadata);
 
   if (!match) {
     return {
       status: 'missing',
-      url: buildSearchPageUrl(metadata),
-      title: `No likely exact RED group match found for ${metadata.artist} - ${metadata.title}. Click to inspect RED search results manually.`,
+      url: buildSearchPageUrl(tracker, metadata),
+      title: `No likely exact ${tracker.label} group match found for ${metadata.artist} - ${metadata.title}. Click to inspect ${tracker.label} search results manually.`,
     };
   }
 
   return {
     status: 'found',
-    url: buildGroupUrl(match.groupId),
+    url: buildGroupUrl(tracker, match.groupId),
     title: [
-      `Matched ${match.artist} - ${match.groupName} on RED.`,
+      `Matched ${match.artist} - ${match.groupName} on ${tracker.label}.`,
       candidates.length > 1 ? `${candidates.length} likely groups matched.` : null,
       Array.isArray(match.torrents) ? `${match.torrents.length} torrent entries in the matched group.` : null,
     ].filter(Boolean).join(' '),

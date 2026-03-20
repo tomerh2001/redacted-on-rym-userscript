@@ -1,14 +1,14 @@
-# RED on RYM
+# RED + OPS on RYM
 
-Violentmonkey userscript that adds a compact RED status badge to Rate Your Music
-album pages so you can see whether the release is already on RED without
-leaving RYM.
+Violentmonkey userscript that adds compact RED and OPS status badges to Rate
+Your Music album pages so you can see whether the release is already on either
+tracker without leaving RYM.
 
 The first version is intentionally narrow:
 
 - RYM album pages only
-- RED lookup through the documented browse API
-- one request per page view, only after you add your own RED API key
+- RED and OPS lookup through their documented browse APIs
+- up to one request per configured tracker on each page view
 - badge placement next to RYM's existing streaming or integration links when
   that cluster is detectable, with a title-area fallback otherwise
 
@@ -20,30 +20,31 @@ The first version is intentionally narrow:
    `https://raw.githubusercontent.com/tomerh2001/redacted-on-rym-userscript/main/dist/redacted-on-rym.user.js`
 
 3. Confirm the install prompt in Violentmonkey.
-4. Open the Violentmonkey menu for the script and choose `Set RED API key`.
-5. Paste a RED API key that is limited to the minimum access you are
-   comfortable with.
+4. Open the Violentmonkey menu for the script and choose `Set RED API key`
+   and/or `Set OPS API token`.
+5. Paste the tracker credential you want to enable. The script can show both
+   badges, or just one if you only configure one tracker.
 
-## Why an API key
+## Why tracker API credentials
 
-RED's local docs explicitly say automated access should use the API rather than
-scraping HTML. This script follows that guidance and stores the API key only in
-Violentmonkey's isolated storage for the script.
+The local tracker docs explicitly point toward API-based access rather than
+HTML scraping. This script follows that guidance and stores each tracker
+credential only in Violentmonkey's isolated storage for the script.
 
-For this lookup flow, the local RED API mirror shows that torrent search is
-available through the browse endpoint and does not require extra API scopes.
+For this lookup flow, the local RED and OPS API mirrors both show that torrent
+search is available through the browse endpoint.
 
 ## Behavior
 
-- `RED: on site`
+- `RED: on site` or `OPS: on site`
   The script found a likely group match and links straight to it.
-- `RED: not found`
-  The script did not find a likely exact match and links to the equivalent RED
-  search page so you can inspect manually.
-- `RED: add API key`
-  The script is installed but cannot query RED yet.
-- `RED: lookup failed`
-  RED returned an error, rate limit response, or auth failure.
+- `RED: not found` or `OPS: not found`
+  The script did not find a likely exact match and links to the equivalent
+  tracker search page so you can inspect manually.
+- `RED: add key` or `OPS: add key`
+  The script is installed but that tracker is not configured yet.
+- `RED: lookup failed` or `OPS: lookup failed`
+  The tracker returned an error, rate limit response, or auth failure.
 
 ## Development
 

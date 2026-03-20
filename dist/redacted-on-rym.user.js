@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         RED on RYM
+// @name         RED + OPS on RYM
 // @namespace    https://github.com/tomerh2001/redacted-on-rym-userscript
-// @version      0.1.0
-// @description  Show whether the current Rate Your Music album page already exists on RED.
+// @version      0.2.0
+// @description  Show whether the current Rate Your Music album page already exists on RED or OPS.
 // @author       Tomer Horowitz
 // @match        https://rateyourmusic.com/release/album/*
 // @grant        GM_getValue
@@ -10,6 +10,7 @@
 // @grant        GM_setValue
 // @grant        GM_xmlhttpRequest
 // @connect      redacted.sh
+// @connect      orpheus.network
 // @run-at       document-idle
 // @homepageURL  https://github.com/tomerh2001/redacted-on-rym-userscript
 // @supportURL   https://github.com/tomerh2001/redacted-on-rym-userscript/issues
@@ -170,13 +171,36 @@
     };
   }
 
-  // src/red.js
-  var RED_BROWSE_ENDPOINT = "https://redacted.sh/ajax.php?action=browse";
-  var RED_GROUP_PAGE = "https://redacted.sh/torrents.php";
-  var RED_SEARCH_PAGE = "https://redacted.sh/torrents.php";
+  // src/trackers.js
   var RELEASE_TYPE_IDS = {
     album: "1"
   };
+  var TRACKERS = [
+    {
+      id: "red",
+      label: "RED",
+      browseEndpoint: "https://redacted.sh/ajax.php?action=browse",
+      searchPage: "https://redacted.sh/torrents.php",
+      groupPage: "https://redacted.sh/torrents.php",
+      credentialStorageKey: "redApiKey",
+      credentialMenuLabel: "RED API key",
+      buildAuthorizationHeader(credential) {
+        return credential;
+      }
+    },
+    {
+      id: "ops",
+      label: "OPS",
+      browseEndpoint: "https://orpheus.network/ajax.php?action=browse",
+      searchPage: "https://orpheus.network/torrents.php",
+      groupPage: "https://orpheus.network/torrents.php",
+      credentialStorageKey: "opsApiToken",
+      credentialMenuLabel: "OPS API token",
+      buildAuthorizationHeader(credential) {
+        return credential.toLowerCase().startsWith("token ") ? credential : `token ${credential}`;
+      }
+    }
+  ];
   function artistKeysMatch(leftValue, rightValue) {
     const leftKey = normalizeMatchKey(leftValue);
     const rightKey = normalizeMatchKey(rightValue);
@@ -185,8 +209,8 @@
     }
     return leftKey === rightKey || leftKey.includes(rightKey) || rightKey.includes(leftKey);
   }
-  function buildBrowseUrl(metadata) {
-    const url = new URL(RED_BROWSE_ENDPOINT);
+  function buildBrowseUrl(tracker, metadata) {
+    const url = new URL(tracker.browseEndpoint);
     url.searchParams.set("searchstr", `${metadata.artist} ${metadata.title}`.trim());
     url.searchParams.set("artistname", metadata.artist);
     url.searchParams.set("groupname", metadata.title);
@@ -200,8 +224,8 @@
     }
     return url.toString();
   }
-  function buildSearchPageUrl(metadata) {
-    const url = new URL(RED_SEARCH_PAGE);
+  function buildSearchPageUrl(tracker, metadata) {
+    const url = new URL(tracker.searchPage);
     url.searchParams.set("searchstr", `${metadata.artist} ${metadata.title}`.trim());
     url.searchParams.set("artistname", metadata.artist);
     url.searchParams.set("groupname", metadata.title);
@@ -209,6 +233,11 @@
     if (releaseType) {
       url.searchParams.set("releasetype", releaseType);
     }
+    return url.toString();
+  }
+  function buildGroupUrl(tracker, groupId) {
+    const url = new URL(tracker.groupPage);
+    url.searchParams.set("id", String(groupId));
     return url.toString();
   }
   function scoreGroupMatch(group, metadata) {
@@ -245,27 +274,25 @@
       candidates: matches.map((candidate) => candidate.group)
     };
   }
-  function buildGroupUrl(groupId) {
-    const url = new URL(RED_GROUP_PAGE);
-    url.searchParams.set("id", String(groupId));
-    return url.toString();
-  }
-  async function lookupReleaseOnRed(metadata, apiKey, requestJson2) {
-    const payload = await requestJson2(buildBrowseUrl(metadata), apiKey);
+  async function lookupReleaseOnTracker(tracker, metadata, credential, requestJson2) {
+    const payload = await requestJson2(
+      buildBrowseUrl(tracker, metadata),
+      tracker.buildAuthorizationHeader(credential)
+    );
     const groups = Array.isArray(payload?.response?.results) ? payload.response.results : [];
     const { match, candidates } = findBestGroupMatch(groups, metadata);
     if (!match) {
       return {
         status: "missing",
-        url: buildSearchPageUrl(metadata),
-        title: `No likely exact RED group match found for ${metadata.artist} - ${metadata.title}. Click to inspect RED search results manually.`
+        url: buildSearchPageUrl(tracker, metadata),
+        title: `No likely exact ${tracker.label} group match found for ${metadata.artist} - ${metadata.title}. Click to inspect ${tracker.label} search results manually.`
       };
     }
     return {
       status: "found",
-      url: buildGroupUrl(match.groupId),
+      url: buildGroupUrl(tracker, match.groupId),
       title: [
-        `Matched ${match.artist} - ${match.groupName} on RED.`,
+        `Matched ${match.artist} - ${match.groupName} on ${tracker.label}.`,
         candidates.length > 1 ? `${candidates.length} likely groups matched.` : null,
         Array.isArray(match.torrents) ? `${match.torrents.length} torrent entries in the matched group.` : null
       ].filter(Boolean).join(" ")
@@ -273,10 +300,9 @@
   }
 
   // src/userscript.js
-  var API_KEY_STORAGE_KEY = "redApiKey";
   var STYLE_ID = "red-on-rym-styles";
   var BADGE_ATTR = "data-red-on-rym-badge";
-  function normalizeApiKey(rawValue) {
+  function normalizeCredential(rawValue) {
     return typeof rawValue === "string" ? rawValue.trim() : "";
   }
   function addStyles() {
@@ -289,6 +315,8 @@
     [${BADGE_ATTR}] {
       display: inline-flex;
       align-items: center;
+      flex-wrap: wrap;
+      gap: 0.45rem;
       margin-left: 0.5rem;
       vertical-align: middle;
     }
@@ -368,45 +396,47 @@
   `;
     document.head.append(style);
   }
-  function getStoredApiKey() {
+  function getStoredCredential(storageKey) {
     if (typeof GM_getValue !== "function") {
       return "";
     }
-    return normalizeApiKey(GM_getValue(API_KEY_STORAGE_KEY, ""));
+    return normalizeCredential(GM_getValue(storageKey, ""));
   }
-  function setStoredApiKey(value) {
+  function setStoredCredential(storageKey, value) {
     if (typeof GM_setValue !== "function") {
       return;
     }
-    GM_setValue(API_KEY_STORAGE_KEY, normalizeApiKey(value));
+    GM_setValue(storageKey, normalizeCredential(value));
   }
   function registerMenuCommands() {
     if (typeof GM_registerMenuCommand !== "function") {
       return;
     }
-    const currentApiKey = getStoredApiKey();
-    GM_registerMenuCommand(
-      `Set RED API key${currentApiKey ? " (configured)" : ""}`,
-      () => {
-        const nextValue = window.prompt(
-          "Paste a RED API key for this script. Leave blank to clear it.",
-          currentApiKey
-        );
-        if (nextValue === null) {
-          return;
+    for (const tracker of TRACKERS) {
+      const currentCredential = getStoredCredential(tracker.credentialStorageKey);
+      GM_registerMenuCommand(
+        `Set ${tracker.credentialMenuLabel}${currentCredential ? " (configured)" : ""}`,
+        () => {
+          const nextValue = window.prompt(
+            `Paste a ${tracker.credentialMenuLabel} for this script. Leave blank to clear it.`,
+            currentCredential
+          );
+          if (nextValue === null) {
+            return;
+          }
+          setStoredCredential(tracker.credentialStorageKey, nextValue);
+          window.location.reload();
         }
-        setStoredApiKey(nextValue);
-        window.location.reload();
+      );
+      if (currentCredential) {
+        GM_registerMenuCommand(`Clear ${tracker.credentialMenuLabel}`, () => {
+          setStoredCredential(tracker.credentialStorageKey, "");
+          window.location.reload();
+        });
       }
-    );
-    if (currentApiKey) {
-      GM_registerMenuCommand("Clear RED API key", () => {
-        setStoredApiKey("");
-        window.location.reload();
-      });
     }
   }
-  function requestJson(url, apiKey) {
+  function requestJson(url, authorizationHeader) {
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: "GET",
@@ -415,37 +445,37 @@
         timeout: 15e3,
         headers: {
           Accept: "application/json",
-          Authorization: apiKey
+          Authorization: authorizationHeader
         },
         onload(response) {
           if (response.status === 429) {
-            reject(new Error("RED rate limit reached"));
+            reject(new Error("Tracker rate limit reached"));
             return;
           }
           if (response.status === 401 || response.status === 403) {
-            reject(new Error("RED rejected the API key"));
+            reject(new Error("Tracker rejected the credential"));
             return;
           }
           if (response.status < 200 || response.status >= 300) {
-            reject(new Error(`RED responded with ${response.status}`));
+            reject(new Error(`Tracker responded with ${response.status}`));
             return;
           }
           try {
             const payload = JSON.parse(response.responseText);
             if (payload?.status !== "success") {
-              reject(new Error("RED returned an unsuccessful API response"));
+              reject(new Error("Tracker returned an unsuccessful API response"));
               return;
             }
             resolve(payload);
           } catch {
-            reject(new Error("RED returned invalid JSON"));
+            reject(new Error("Tracker returned invalid JSON"));
           }
         },
         ontimeout() {
-          reject(new Error("RED lookup timed out"));
+          reject(new Error("Tracker lookup timed out"));
         },
         onerror() {
-          reject(new Error("RED lookup failed"));
+          reject(new Error("Tracker lookup failed"));
         }
       });
     });
@@ -485,16 +515,16 @@
     dot.setAttribute("aria-hidden", "true");
     const label = document.createElement("span");
     label.className = "red-on-rym-chip__label";
-    label.textContent = "RED";
+    label.textContent = state.trackerLabel;
     const status = document.createElement("span");
     status.className = "red-on-rym-chip__status";
     status.textContent = state.label;
     element.append(dot, label, status);
     return element;
   }
-  function updateBadge(state) {
+  function updateBadges(states) {
     const host = ensureBadgeHost();
-    host.replaceChildren(renderBadge(state));
+    host.replaceChildren(...states.map(renderBadge));
   }
   async function main() {
     addStyles();
@@ -503,41 +533,65 @@
     if (!metadata) {
       return;
     }
-    const apiKey = getStoredApiKey();
-    if (!apiKey) {
-      updateBadge({
-        status: "config",
-        label: "add API key",
-        title: "Set a limited RED API key from the Violentmonkey menu to enable lookups."
-      });
-      return;
-    }
-    updateBadge({
-      status: "pending",
-      label: "checking...",
-      title: `Checking RED for ${metadata.artist} - ${metadata.title}.`
-    });
-    try {
-      const lookupResult = await lookupReleaseOnRed(metadata, apiKey, requestJson);
-      updateBadge({
-        status: lookupResult.status,
-        label: lookupResult.status === "found" ? "on site" : "not found",
-        title: lookupResult.title,
-        url: lookupResult.url
-      });
-    } catch (error) {
-      updateBadge({
-        status: "error",
-        label: "lookup failed",
-        title: error instanceof Error ? error.message : "RED lookup failed."
-      });
-    }
+    updateBadges(
+      TRACKERS.map((tracker) => {
+        const credential = getStoredCredential(tracker.credentialStorageKey);
+        if (!credential) {
+          return {
+            trackerLabel: tracker.label,
+            status: "config",
+            label: "add key",
+            title: `Set a ${tracker.credentialMenuLabel} from the Violentmonkey menu to enable ${tracker.label} lookups.`
+          };
+        }
+        return {
+          trackerLabel: tracker.label,
+          status: "pending",
+          label: "checking...",
+          title: `Checking ${tracker.label} for ${metadata.artist} - ${metadata.title}.`
+        };
+      })
+    );
+    const results = await Promise.all(
+      TRACKERS.map(async (tracker) => {
+        const credential = getStoredCredential(tracker.credentialStorageKey);
+        if (!credential) {
+          return {
+            trackerLabel: tracker.label,
+            status: "config",
+            label: "add key",
+            title: `Set a ${tracker.credentialMenuLabel} from the Violentmonkey menu to enable ${tracker.label} lookups.`
+          };
+        }
+        try {
+          const lookupResult = await lookupReleaseOnTracker(tracker, metadata, credential, requestJson);
+          return {
+            trackerLabel: tracker.label,
+            status: lookupResult.status,
+            label: lookupResult.status === "found" ? "on site" : "not found",
+            title: lookupResult.title,
+            url: lookupResult.url
+          };
+        } catch (error) {
+          return {
+            trackerLabel: tracker.label,
+            status: "error",
+            label: "lookup failed",
+            title: error instanceof Error ? error.message : `${tracker.label} lookup failed.`
+          };
+        }
+      })
+    );
+    updateBadges(results);
   }
   main().catch(() => {
-    updateBadge({
-      status: "error",
-      label: "lookup failed",
-      title: "Unexpected userscript failure."
-    });
+    updateBadges(
+      TRACKERS.map((tracker) => ({
+        trackerLabel: tracker.label,
+        status: "error",
+        label: "lookup failed",
+        title: `Unexpected ${tracker.label} userscript failure.`
+      }))
+    );
   });
 })();

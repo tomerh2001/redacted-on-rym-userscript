@@ -12,10 +12,10 @@ const outputDir = path.join(rootDir, 'dist');
 await mkdir(outputDir, { recursive: true });
 
 const userscriptHeader = `// ==UserScript==
-// @name         RED on RYM
+// @name         RED + OPS on RYM
 // @namespace    https://github.com/tomerh2001/redacted-on-rym-userscript
 // @version      ${packageJson.version}
-// @description  Show whether the current Rate Your Music album page already exists on RED.
+// @description  Show whether the current Rate Your Music album page already exists on RED or OPS.
 // @author       ${packageJson.author}
 // @match        https://rateyourmusic.com/release/album/*
 // @grant        GM_getValue
@@ -23,6 +23,7 @@ const userscriptHeader = `// ==UserScript==
 // @grant        GM_setValue
 // @grant        GM_xmlhttpRequest
 // @connect      redacted.sh
+// @connect      orpheus.network
 // @run-at       document-idle
 // @homepageURL  https://github.com/tomerh2001/redacted-on-rym-userscript
 // @supportURL   https://github.com/tomerh2001/redacted-on-rym-userscript/issues
