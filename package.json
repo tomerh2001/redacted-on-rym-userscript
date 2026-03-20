@@ -1,6 +1,6 @@
 {
   "name": "redacted-on-rym-userscript",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Violentmonkey userscript that shows whether a Rate Your Music album page already has a match on RED or OPS.",
   "author": "Tomer Horowitz",
   "type": "module",
