@@ -9,7 +9,7 @@
 
 The safest first version is a RYM album-page userscript that queries RED's and
 OPS's documented browse APIs with user-supplied credentials and injects compact
-status badges next to RYM's existing streaming or integration links when that
+status badges below RYM's existing streaming or integration links when that
 cluster is detectable.
 
 ## Confirmed points
@@ -62,8 +62,8 @@ cluster is detectable.
   the tracker documentation.
 - Match locally using normalized artist and title keys so the script stays
   conservative about claiming a hit.
-- Insert the badges into the existing streaming-links cluster when detectable,
-  otherwise fall back to the title area.
+- Insert the badges as a separate row below the existing streaming-links
+  cluster when detectable, otherwise fall back to the title area.
 
 ## Risks
 

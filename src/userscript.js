@@ -25,11 +25,17 @@ function addStyles() {
       vertical-align: middle;
     }
 
+    [${BADGE_ATTR}][data-layout="integration"],
     [${BADGE_ATTR}][data-layout="heading"],
     [${BADGE_ATTR}][data-layout="body"] {
       display: flex;
       margin-top: 0.65rem;
       margin-left: 0;
+    }
+
+    [${BADGE_ATTR}][data-layout="integration"] {
+      width: 100%;
+      flex-basis: 100%;
     }
 
     .red-on-rym-chip {
@@ -206,18 +212,12 @@ function ensureBadgeHost() {
   }
 
   const mount = findBadgeMount(document);
-  const tagName =
-    mount.mode === 'integration' && ['UL', 'OL'].includes(mount.container.tagName)
-      ? 'li'
-      : mount.mode === 'integration'
-        ? 'span'
-        : 'div';
-  const host = document.createElement(tagName);
+  const host = document.createElement('div');
   host.setAttribute(BADGE_ATTR, '');
   host.dataset.layout = mount.mode;
 
   if (mount.mode === 'integration') {
-    mount.container.append(host);
+    mount.container.insertAdjacentElement('afterend', host);
   } else if (mount.mode === 'heading') {
     mount.container.insertAdjacentElement('afterend', host);
   } else {
