@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RED + OPS on RYM
 // @namespace    https://github.com/tomerh2001/redacted-on-rym-userscript
-// @version      0.2.2
+// @version      0.2.3
 // @description  Show whether the current Rate Your Music album page already exists on RED or OPS.
 // @author       Tomer Horowitz
 // @match        https://rateyourmusic.com/release/album/*
@@ -309,6 +309,8 @@
   // src/userscript.js
   var STYLE_ID = "red-on-rym-styles";
   var BADGE_ATTR = "data-red-on-rym-badge";
+  var MOUNT_OBSERVER_ATTR = "data-red-on-rym-observing";
+  var MOUNT_RETRY_TIMEOUT_MS = 5e3;
   function normalizeCredential(rawValue) {
     return typeof rawValue === "string" ? rawValue.trim() : "";
   }
@@ -493,21 +495,52 @@
       });
     });
   }
+  function placeBadgeHost(host, mount) {
+    host.dataset.layout = mount.mode;
+    if (mount.mode === "body") {
+      if (host.parentElement !== mount.container || mount.container.firstElementChild !== host) {
+        mount.container.prepend(host);
+      }
+      return;
+    }
+    if (host.previousElementSibling !== mount.container || host.parentElement !== mount.container.parentElement) {
+      mount.container.insertAdjacentElement("afterend", host);
+    }
+  }
+  function watchForPreferredMount(host) {
+    if (host.getAttribute(MOUNT_OBSERVER_ATTR) === "true" || !document.body) {
+      return;
+    }
+    host.setAttribute(MOUNT_OBSERVER_ATTR, "true");
+    const observer = new MutationObserver(() => {
+      const mount = findBadgeMount(document);
+      if (mount.mode !== "integration") {
+        return;
+      }
+      placeBadgeHost(host, mount);
+      host.removeAttribute(MOUNT_OBSERVER_ATTR);
+      observer.disconnect();
+    });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+    window.setTimeout(() => {
+      observer.disconnect();
+      host.removeAttribute(MOUNT_OBSERVER_ATTR);
+    }, MOUNT_RETRY_TIMEOUT_MS);
+  }
   function ensureBadgeHost() {
-    const existingHost = document.querySelector(`[${BADGE_ATTR}]`);
-    if (existingHost) {
-      return existingHost;
+    const host = document.querySelector(`[${BADGE_ATTR}]`) ?? document.createElement("div");
+    if (!host.hasAttribute(BADGE_ATTR)) {
+      host.setAttribute(BADGE_ATTR, "");
     }
     const mount = findBadgeMount(document);
-    const host = document.createElement("div");
-    host.setAttribute(BADGE_ATTR, "");
-    host.dataset.layout = mount.mode;
-    if (mount.mode === "integration") {
-      mount.container.insertAdjacentElement("afterend", host);
-    } else if (mount.mode === "heading") {
-      mount.container.insertAdjacentElement("afterend", host);
+    placeBadgeHost(host, mount);
+    if (mount.mode !== "integration") {
+      watchForPreferredMount(host);
     } else {
-      mount.container.prepend(host);
+      host.removeAttribute(MOUNT_OBSERVER_ATTR);
     }
     return host;
   }

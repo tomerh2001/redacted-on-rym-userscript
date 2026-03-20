@@ -65,12 +65,18 @@ cluster is detectable.
 - Prefer RYM's `#media_link_button_container_top` as the badge anchor and
   insert the badges as a separate row below it; otherwise fall back to a
   streaming-links heuristic and then the title area.
+- If the preferred media-links container is not present yet when the script
+  starts, keep a short-lived observer running so the badges move into place as
+  soon as RYM finishes rendering that block.
 
 ## Risks
 
 - RYM may still revise the media-links markup, so the explicit
   `#media_link_button_container_top` anchor could require a future selector
   update.
+- RYM appears to render parts of the page late enough that early userscript
+  mounts can land in a fallback spot unless the host re-checks for the
+  preferred container.
 - Exact-ish matching may miss releases with materially different tracker group
   titles, translations, or unusual artist-credit shapes.
 - Live tracker verification still needs an explicit tracker-safety notice

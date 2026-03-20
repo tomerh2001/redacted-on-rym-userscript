@@ -3,6 +3,8 @@ import { extractReleaseMetadata, findBadgeMount } from './rym.js';
 
 const STYLE_ID = 'red-on-rym-styles';
 const BADGE_ATTR = 'data-red-on-rym-badge';
+const MOUNT_OBSERVER_ATTR = 'data-red-on-rym-observing';
+const MOUNT_RETRY_TIMEOUT_MS = 5_000;
 
 function normalizeCredential(rawValue) {
   return typeof rawValue === 'string' ? rawValue.trim() : '';
@@ -205,23 +207,65 @@ function requestJson(url, authorizationHeader) {
   });
 }
 
+function placeBadgeHost(host, mount) {
+  host.dataset.layout = mount.mode;
+
+  if (mount.mode === 'body') {
+    if (host.parentElement !== mount.container || mount.container.firstElementChild !== host) {
+      mount.container.prepend(host);
+    }
+    return;
+  }
+
+  if (host.previousElementSibling !== mount.container || host.parentElement !== mount.container.parentElement) {
+    mount.container.insertAdjacentElement('afterend', host);
+  }
+}
+
+function watchForPreferredMount(host) {
+  if (host.getAttribute(MOUNT_OBSERVER_ATTR) === 'true' || !document.body) {
+    return;
+  }
+
+  host.setAttribute(MOUNT_OBSERVER_ATTR, 'true');
+
+  // RYM finishes rendering the media links after our script sometimes runs.
+  // Keep a short-lived observer so we can move the badges into the intended row.
+  const observer = new MutationObserver(() => {
+    const mount = findBadgeMount(document);
+    if (mount.mode !== 'integration') {
+      return;
+    }
+
+    placeBadgeHost(host, mount);
+    host.removeAttribute(MOUNT_OBSERVER_ATTR);
+    observer.disconnect();
+  });
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
+
+  window.setTimeout(() => {
+    observer.disconnect();
+    host.removeAttribute(MOUNT_OBSERVER_ATTR);
+  }, MOUNT_RETRY_TIMEOUT_MS);
+}
+
 function ensureBadgeHost() {
-  const existingHost = document.querySelector(`[${BADGE_ATTR}]`);
-  if (existingHost) {
-    return existingHost;
+  const host = document.querySelector(`[${BADGE_ATTR}]`) ?? document.createElement('div');
+  if (!host.hasAttribute(BADGE_ATTR)) {
+    host.setAttribute(BADGE_ATTR, '');
   }
 
   const mount = findBadgeMount(document);
-  const host = document.createElement('div');
-  host.setAttribute(BADGE_ATTR, '');
-  host.dataset.layout = mount.mode;
+  placeBadgeHost(host, mount);
 
-  if (mount.mode === 'integration') {
-    mount.container.insertAdjacentElement('afterend', host);
-  } else if (mount.mode === 'heading') {
-    mount.container.insertAdjacentElement('afterend', host);
+  if (mount.mode !== 'integration') {
+    watchForPreferredMount(host);
   } else {
-    mount.container.prepend(host);
+    host.removeAttribute(MOUNT_OBSERVER_ATTR);
   }
 
   return host;
