@@ -9,8 +9,7 @@
 
 The safest first version is a RYM album-page userscript that queries RED's and
 OPS's documented browse APIs with user-supplied credentials and injects compact
-status badges below RYM's existing streaming or integration links when that
-cluster is detectable.
+status badges directly in the page header, below the release title.
 
 ## Confirmed points
 
@@ -62,28 +61,13 @@ cluster is detectable.
   the tracker documentation.
 - Match locally using normalized artist and title keys so the script stays
   conservative about claiming a hit.
-- Prefer RYM's `#media_link_button_container_top` as the badge anchor and
-  insert the badges as a separate row below it; otherwise fall back to a
-  streaming-links heuristic and then the title area.
-- If the preferred media-links container is not present yet when the script
-  starts, keep a short-lived observer running so the badges move into place as
-  soon as RYM finishes rendering that block.
-- Treat heuristic integration containers as provisional only; keep watching
-  until the exact `#media_link_button_container_top` target exists so we do not
-  get stuck under RYM's alternate small-screen metadata layout.
-- For this page family, it is safer not to mount at all until
-  `#media_link_button_container_top` exists than to show chips in the wrong
-  subtree. The host can hold its content while detached and then insert once
-  the exact target arrives.
+- Mount the badges directly below the release-page `h1` instead of trying to
+  follow RYM's media-links markup.
 
 ## Risks
 
-- RYM may still revise the media-links markup, so the explicit
-  `#media_link_button_container_top` anchor could require a future selector
-  update.
-- RYM appears to render parts of the page late enough that early userscript
-  mounts can land in a fallback spot unless the host re-checks for the
-  preferred container.
+- RYM could still revise the title-area markup, but a plain `h1` anchor should
+  be less brittle than the media-links area.
 - Exact-ish matching may miss releases with materially different tracker group
   titles, translations, or unusual artist-credit shapes.
 - Live tracker verification still needs an explicit tracker-safety notice

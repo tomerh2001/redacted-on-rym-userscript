@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RED + OPS on RYM
 // @namespace    https://github.com/tomerh2001/redacted-on-rym-userscript
-// @version      0.2.5
+// @version      0.2.6
 // @description  Show whether the current Rate Your Music album page already exists on RED or OPS.
 // @author       Tomer Horowitz
 // @match        https://rateyourmusic.com/release/album/*
@@ -20,7 +20,6 @@
 (() => {
   // src/rym.js
   var RELEASE_PATH_RE = /^\/release\/([^/]+)\/([^/]+)\/([^/]+)\/?$/i;
-  var PREFERRED_BADGE_MOUNT_SELECTOR = "#media_link_button_container_top";
   function normalizeWhitespace(value) {
     return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
   }
@@ -83,6 +82,21 @@
   }
   function normalizeMatchKey(value) {
     return normalizeWhitespace(String(value ?? "")).normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[&+]/g, " and ").replace(/['’`´]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").toLowerCase().trim();
+  }
+  function findBadgeMount(doc = document) {
+    const heading = doc.querySelector("h1");
+    if (heading) {
+      return {
+        mode: "heading",
+        container: heading,
+        preferred: true
+      };
+    }
+    return {
+      mode: "body",
+      container: doc.body,
+      preferred: false
+    };
   }
   function extractReleaseMetadata(doc = document, locationObject = window.location) {
     const pathInfo = parseReleasePath(locationObject?.pathname ?? "");
@@ -231,7 +245,6 @@
   // src/userscript.js
   var STYLE_ID = "red-on-rym-styles";
   var BADGE_ATTR = "data-red-on-rym-badge";
-  var MOUNT_OBSERVER_ATTR = "data-red-on-rym-observing";
   function normalizeCredential(rawValue) {
     return typeof rawValue === "string" ? rawValue.trim() : "";
   }
@@ -428,57 +441,13 @@
       mount.container.insertAdjacentElement("afterend", host);
     }
   }
-  function disconnectMountObserver(host) {
-    host.redOnRymMountObserver?.disconnect();
-    delete host.redOnRymMountObserver;
-    host.removeAttribute(MOUNT_OBSERVER_ATTR);
-  }
-  function watchForPreferredMount(host) {
-    if (host.redOnRymMountObserver || !document.body) {
-      return;
-    }
-    host.setAttribute(MOUNT_OBSERVER_ATTR, "true");
-    const moveHostToPreferredMount = () => {
-      const preferredContainer = document.querySelector(PREFERRED_BADGE_MOUNT_SELECTOR);
-      if (!preferredContainer) {
-        return false;
-      }
-      placeBadgeHost(host, {
-        mode: "integration",
-        container: preferredContainer,
-        preferred: true
-      });
-      disconnectMountObserver(host);
-      return true;
-    };
-    if (moveHostToPreferredMount()) {
-      return;
-    }
-    const observer = new MutationObserver(() => {
-      moveHostToPreferredMount();
-    });
-    host.redOnRymMountObserver = observer;
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
-  }
   function ensureBadgeHost() {
     const host = document.querySelector(`[${BADGE_ATTR}]`) ?? document.createElement("div");
     if (!host.hasAttribute(BADGE_ATTR)) {
       host.setAttribute(BADGE_ATTR, "");
     }
-    const preferredContainer = document.querySelector(PREFERRED_BADGE_MOUNT_SELECTOR);
-    if (preferredContainer) {
-      placeBadgeHost(host, {
-        mode: "integration",
-        container: preferredContainer,
-        preferred: true
-      });
-      disconnectMountObserver(host);
-    } else {
-      watchForPreferredMount(host);
-    }
+    const mount = findBadgeMount(document);
+    placeBadgeHost(host, mount);
     return host;
   }
   function renderBadge(state) {

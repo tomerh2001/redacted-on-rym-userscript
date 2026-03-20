@@ -1,9 +1,8 @@
 import { TRACKERS, lookupReleaseOnTracker } from './trackers.js';
-import { extractReleaseMetadata, PREFERRED_BADGE_MOUNT_SELECTOR } from './rym.js';
+import { extractReleaseMetadata, findBadgeMount } from './rym.js';
 
 const STYLE_ID = 'red-on-rym-styles';
 const BADGE_ATTR = 'data-red-on-rym-badge';
-const MOUNT_OBSERVER_ATTR = 'data-red-on-rym-observing';
 
 function normalizeCredential(rawValue) {
   return typeof rawValue === 'string' ? rawValue.trim() : '';
@@ -221,68 +220,14 @@ function placeBadgeHost(host, mount) {
   }
 }
 
-function disconnectMountObserver(host) {
-  host.redOnRymMountObserver?.disconnect();
-  delete host.redOnRymMountObserver;
-  host.removeAttribute(MOUNT_OBSERVER_ATTR);
-}
-
-function watchForPreferredMount(host) {
-  if (host.redOnRymMountObserver || !document.body) {
-    return;
-  }
-
-  host.setAttribute(MOUNT_OBSERVER_ATTR, 'true');
-
-  const moveHostToPreferredMount = () => {
-    const preferredContainer = document.querySelector(PREFERRED_BADGE_MOUNT_SELECTOR);
-    if (!preferredContainer) {
-      return false;
-    }
-
-    placeBadgeHost(host, {
-      mode: 'integration',
-      container: preferredContainer,
-      preferred: true,
-    });
-    disconnectMountObserver(host);
-    return true;
-  };
-
-  if (moveHostToPreferredMount()) {
-    return;
-  }
-
-  // RYM finishes rendering the media links after our script sometimes runs.
-  // Do not mount anywhere else first; wait until the exact target exists.
-  const observer = new MutationObserver(() => {
-    moveHostToPreferredMount();
-  });
-  host.redOnRymMountObserver = observer;
-
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-  });
-}
-
 function ensureBadgeHost() {
   const host = document.querySelector(`[${BADGE_ATTR}]`) ?? document.createElement('div');
   if (!host.hasAttribute(BADGE_ATTR)) {
     host.setAttribute(BADGE_ATTR, '');
   }
 
-  const preferredContainer = document.querySelector(PREFERRED_BADGE_MOUNT_SELECTOR);
-  if (preferredContainer) {
-    placeBadgeHost(host, {
-      mode: 'integration',
-      container: preferredContainer,
-      preferred: true,
-    });
-    disconnectMountObserver(host);
-  } else {
-    watchForPreferredMount(host);
-  }
+  const mount = findBadgeMount(document);
+  placeBadgeHost(host, mount);
 
   return host;
 }

@@ -9,7 +9,6 @@ import {
   normalizeMatchKey,
   parseReleasePath,
   parseReleaseTitle,
-  PREFERRED_BADGE_MOUNT_SELECTOR,
 } from '../src/rym.js';
 
 test('parseReleasePath extracts album metadata from a RYM album URL', () => {
@@ -53,51 +52,41 @@ test('isSupportedIntegrationHref identifies likely streaming or buy-link hosts',
   assert.equal(isSupportedIntegrationHref('https://rateyourmusic.com/release/album/foo/bar/'), false);
 });
 
-test('findBadgeMount prefers media_link_button_container_top when present', () => {
-  const preferredContainer = { id: 'media_link_button_container_top' };
-  const doc = {
-    querySelector(selector) {
-      if (selector === PREFERRED_BADGE_MOUNT_SELECTOR) {
-        return preferredContainer;
-      }
-
-      if (selector === 'h1') {
-        return null;
-      }
-
-      return null;
-    },
-  };
-
-  assert.deepEqual(findBadgeMount(doc), {
-    mode: 'integration',
-    container: preferredContainer,
-    preferred: true,
-  });
-});
-
-test('findBadgeMount marks heading fallback as non-preferred when media links are unavailable', () => {
+test('findBadgeMount prefers the page heading when present', () => {
   const heading = { tagName: 'H1' };
   const doc = {
     querySelector(selector) {
-      if (selector === PREFERRED_BADGE_MOUNT_SELECTOR) {
-        return null;
-      }
-
       if (selector === 'h1') {
         return heading;
       }
 
       return null;
     },
-    querySelectorAll() {
-      return [];
-    },
   };
 
   assert.deepEqual(findBadgeMount(doc), {
     mode: 'heading',
     container: heading,
+    preferred: true,
+  });
+});
+
+test('findBadgeMount falls back to body when the heading is unavailable', () => {
+  const body = { tagName: 'BODY' };
+  const doc = {
+    querySelector(selector) {
+      if (selector === 'h1') {
+        return null;
+      }
+
+      return null;
+    },
+    body,
+  };
+
+  assert.deepEqual(findBadgeMount(doc), {
+    mode: 'body',
+    container: body,
     preferred: false,
   });
 });
