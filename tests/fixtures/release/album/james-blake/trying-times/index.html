@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Trying Times by James Blake (Album, Alternative R&amp;B): Reviews, Ratings, Credits - Rate Your Music</title>
+    <meta property="og:title" content="Trying Times by James Blake (Album, Alternative R&amp;B): Reviews, Ratings, Credits - Rate Your Music">
+    <meta property="og:description" content="Released 13 March 2026 on Good Boy. Reviews, credits, songs, and more.">
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, system-ui, sans-serif;
+      }
+
+      body {
+        margin: 0;
+        background: #0d131c;
+        color: #eef3ff;
+      }
+
+      .page {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 32px 24px 48px;
+      }
+
+      .section_main_info {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        gap: 32px;
+        align-items: start;
+      }
+
+      .cover {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #262319 0%, #151b23 100%);
+      }
+
+      .release-header {
+        display: block;
+      }
+
+      .release-header h1 {
+        margin: 0;
+        font-size: 3rem;
+        line-height: 1.05;
+        font-weight: 700;
+      }
+
+      .release-meta {
+        margin-top: 20px;
+        display: grid;
+        grid-template-columns: 96px 1fr;
+        row-gap: 12px;
+        column-gap: 16px;
+        color: #c6d2e5;
+      }
+
+      .release-meta strong {
+        color: #ffffff;
+      }
+
+      .media-links {
+        margin-top: 24px;
+        display: flex;
+        gap: 12px;
+      }
+
+      .media-links a {
+        width: 42px;
+        height: 42px;
+        border-radius: 10px;
+        background: #1a2230;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        text-decoration: none;
+        font-size: 0.75rem;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="section_main_info section_outer">
+        <div>
+          <div class="cover"></div>
+          <div id="media_link_button_container_top" class="media-links" aria-label="Media links">
+            <a href="https://music.apple.com/us/album/trying-times/1">Apple</a>
+            <a href="https://open.spotify.com/album/trying-times">Spotify</a>
+            <a href="https://tidal.com/browse/album/trying-times">Tidal</a>
+          </div>
+        </div>
+        <div class="release-header">
+          <h1>Trying Times</h1>
+          <div class="release-meta">
+            <div>Artist</div>
+            <div><strong>James Blake</strong></div>
+            <div>Type</div>
+            <div>Album</div>
+            <div>Released</div>
+            <div>13 March 2026</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const storage = new Map([
+        ['redApiKey', 'fixture-red-key'],
+        ['opsApiToken', 'fixture-ops-token'],
+      ]);
+
+      window.GM_getValue = (key, fallback) => storage.has(key) ? storage.get(key) : fallback;
+      window.GM_setValue = (key, value) => storage.set(key, value);
+      window.GM_registerMenuCommand = () => {};
+      window.GM_xmlhttpRequest = options => {
+        const url = new URL(options.url);
+        const payload = url.hostname === 'redacted.sh'
+          ? {
+              status: 'success',
+              response: {
+                results: [
+                  {
+                    groupId: 16871267,
+                    groupName: 'Trying Times',
+                    artist: 'James Blake',
+                    groupYear: 2026,
+                    torrents: [{ id: 1 }],
+                  },
+                ],
+              },
+            }
+          : {
+              status: 'success',
+              response: {
+                results: [],
+              },
+            };
+
+        window.setTimeout(() => {
+          options.onload?.({
+            status: 200,
+            responseText: JSON.stringify(payload),
+          });
+        }, 20);
+      };
+    </script>
+    <script src="/dist/redacted-on-rym.user.js"></script>
+  </body>
+</html>

@@ -13,6 +13,7 @@
   },
   "scripts": {
     "build": "node scripts/build-userscript.mjs",
+    "fixture:serve": "node scripts/serve-fixture.mjs",
     "test": "node --test",
     "ci": "npm test && npm run build"
   },

@@ -9,8 +9,7 @@ The first version is intentionally narrow:
 - RYM album pages only
 - RED and OPS lookup through their documented browse APIs
 - up to one request per configured tracker on each page view
-- badge placement below RYM's existing streaming or integration links when
-  that cluster is detectable, with a title-area fallback otherwise
+- badge placement directly below the release title in the page header
 
 ## Install
 
@@ -53,3 +52,21 @@ npm run build
 ```
 
 The built userscript is written to `dist/redacted-on-rym.user.js`.
+
+## Local Browser Fixture
+
+Cloudflare blocks one-off Playwright access to live RYM from this environment,
+so the repo now includes a local fixture page for browser-level verification.
+
+```bash
+npm run build
+npm run fixture:serve
+```
+
+Then open:
+
+`http://127.0.0.1:4173/release/album/james-blake/trying-times/`
+
+The fixture preloads mock RED and OPS credentials plus mocked tracker API
+responses, so the built userscript should render `RED on site` and
+`OPS not found` directly below the `Trying Times` page heading.
