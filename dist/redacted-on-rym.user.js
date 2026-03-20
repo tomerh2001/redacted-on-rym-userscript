@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RED + OPS on RYM
 // @namespace    https://github.com/tomerh2001/redacted-on-rym-userscript
-// @version      0.2.3
+// @version      0.2.4
 // @description  Show whether the current Rate Your Music album page already exists on RED or OPS.
 // @author       Tomer Horowitz
 // @match        https://rateyourmusic.com/release/album/*
@@ -20,6 +20,7 @@
 (() => {
   // src/rym.js
   var RELEASE_PATH_RE = /^\/release\/([^/]+)\/([^/]+)\/([^/]+)\/?$/i;
+  var PREFERRED_BADGE_MOUNT_SELECTOR = "#media_link_button_container_top";
   var STREAMING_HOST_SUFFIXES = [
     "spotify.com",
     "apple.com",
@@ -136,30 +137,34 @@
     return scoredCandidates[0]?.element ?? null;
   }
   function findBadgeMount(doc = document) {
-    const preferredIntegrationContainer = doc.querySelector("#media_link_button_container_top");
+    const preferredIntegrationContainer = doc.querySelector(PREFERRED_BADGE_MOUNT_SELECTOR);
     if (preferredIntegrationContainer) {
       return {
         mode: "integration",
-        container: preferredIntegrationContainer
+        container: preferredIntegrationContainer,
+        preferred: true
       };
     }
     const integrationContainer = findIntegrationContainer(doc);
     if (integrationContainer) {
       return {
         mode: "integration",
-        container: integrationContainer
+        container: integrationContainer,
+        preferred: false
       };
     }
     const heading = doc.querySelector("h1");
     if (heading) {
       return {
         mode: "heading",
-        container: heading
+        container: heading,
+        preferred: false
       };
     }
     return {
       mode: "body",
-      container: doc.body
+      container: doc.body,
+      preferred: false
     };
   }
   function extractReleaseMetadata(doc = document, locationObject = window.location) {
@@ -513,11 +518,15 @@
     }
     host.setAttribute(MOUNT_OBSERVER_ATTR, "true");
     const observer = new MutationObserver(() => {
-      const mount = findBadgeMount(document);
-      if (mount.mode !== "integration") {
+      const preferredContainer = document.querySelector(PREFERRED_BADGE_MOUNT_SELECTOR);
+      if (!preferredContainer) {
         return;
       }
-      placeBadgeHost(host, mount);
+      placeBadgeHost(host, {
+        mode: "integration",
+        container: preferredContainer,
+        preferred: true
+      });
       host.removeAttribute(MOUNT_OBSERVER_ATTR);
       observer.disconnect();
     });
@@ -537,7 +546,7 @@
     }
     const mount = findBadgeMount(document);
     placeBadgeHost(host, mount);
-    if (mount.mode !== "integration") {
+    if (!mount.preferred) {
       watchForPreferredMount(host);
     } else {
       host.removeAttribute(MOUNT_OBSERVER_ATTR);

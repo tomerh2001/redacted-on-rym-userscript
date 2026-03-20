@@ -9,6 +9,7 @@ import {
   normalizeMatchKey,
   parseReleasePath,
   parseReleaseTitle,
+  PREFERRED_BADGE_MOUNT_SELECTOR,
 } from '../src/rym.js';
 
 test('parseReleasePath extracts album metadata from a RYM album URL', () => {
@@ -56,7 +57,7 @@ test('findBadgeMount prefers media_link_button_container_top when present', () =
   const preferredContainer = { id: 'media_link_button_container_top' };
   const doc = {
     querySelector(selector) {
-      if (selector === '#media_link_button_container_top') {
+      if (selector === PREFERRED_BADGE_MOUNT_SELECTOR) {
         return preferredContainer;
       }
 
@@ -71,5 +72,32 @@ test('findBadgeMount prefers media_link_button_container_top when present', () =
   assert.deepEqual(findBadgeMount(doc), {
     mode: 'integration',
     container: preferredContainer,
+    preferred: true,
+  });
+});
+
+test('findBadgeMount marks heading fallback as non-preferred when media links are unavailable', () => {
+  const heading = { tagName: 'H1' };
+  const doc = {
+    querySelector(selector) {
+      if (selector === PREFERRED_BADGE_MOUNT_SELECTOR) {
+        return null;
+      }
+
+      if (selector === 'h1') {
+        return heading;
+      }
+
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+  };
+
+  assert.deepEqual(findBadgeMount(doc), {
+    mode: 'heading',
+    container: heading,
+    preferred: false,
   });
 });

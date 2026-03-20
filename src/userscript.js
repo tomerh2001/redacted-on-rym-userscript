@@ -1,5 +1,5 @@
 import { TRACKERS, lookupReleaseOnTracker } from './trackers.js';
-import { extractReleaseMetadata, findBadgeMount } from './rym.js';
+import { extractReleaseMetadata, findBadgeMount, PREFERRED_BADGE_MOUNT_SELECTOR } from './rym.js';
 
 const STYLE_ID = 'red-on-rym-styles';
 const BADGE_ATTR = 'data-red-on-rym-badge';
@@ -232,12 +232,16 @@ function watchForPreferredMount(host) {
   // RYM finishes rendering the media links after our script sometimes runs.
   // Keep a short-lived observer so we can move the badges into the intended row.
   const observer = new MutationObserver(() => {
-    const mount = findBadgeMount(document);
-    if (mount.mode !== 'integration') {
+    const preferredContainer = document.querySelector(PREFERRED_BADGE_MOUNT_SELECTOR);
+    if (!preferredContainer) {
       return;
     }
 
-    placeBadgeHost(host, mount);
+    placeBadgeHost(host, {
+      mode: 'integration',
+      container: preferredContainer,
+      preferred: true,
+    });
     host.removeAttribute(MOUNT_OBSERVER_ATTR);
     observer.disconnect();
   });
@@ -262,7 +266,7 @@ function ensureBadgeHost() {
   const mount = findBadgeMount(document);
   placeBadgeHost(host, mount);
 
-  if (mount.mode !== 'integration') {
+  if (!mount.preferred) {
     watchForPreferredMount(host);
   } else {
     host.removeAttribute(MOUNT_OBSERVER_ATTR);

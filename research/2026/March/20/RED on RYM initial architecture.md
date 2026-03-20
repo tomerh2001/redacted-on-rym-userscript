@@ -68,6 +68,9 @@ cluster is detectable.
 - If the preferred media-links container is not present yet when the script
   starts, keep a short-lived observer running so the badges move into place as
   soon as RYM finishes rendering that block.
+- Treat heuristic integration containers as provisional only; keep watching
+  until the exact `#media_link_button_container_top` target exists so we do not
+  get stuck under RYM's alternate small-screen metadata layout.
 
 ## Risks
 

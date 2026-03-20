@@ -1,4 +1,5 @@
 const RELEASE_PATH_RE = /^\/release\/([^/]+)\/([^/]+)\/([^/]+)\/?$/i;
+export const PREFERRED_BADGE_MOUNT_SELECTOR = '#media_link_button_container_top';
 const STREAMING_HOST_SUFFIXES = [
   'spotify.com',
   'apple.com',
@@ -160,11 +161,12 @@ export function findIntegrationContainer(doc = document) {
 }
 
 export function findBadgeMount(doc = document) {
-  const preferredIntegrationContainer = doc.querySelector('#media_link_button_container_top');
+  const preferredIntegrationContainer = doc.querySelector(PREFERRED_BADGE_MOUNT_SELECTOR);
   if (preferredIntegrationContainer) {
     return {
       mode: 'integration',
       container: preferredIntegrationContainer,
+      preferred: true,
     };
   }
 
@@ -173,6 +175,7 @@ export function findBadgeMount(doc = document) {
     return {
       mode: 'integration',
       container: integrationContainer,
+      preferred: false,
     };
   }
 
@@ -181,12 +184,14 @@ export function findBadgeMount(doc = document) {
     return {
       mode: 'heading',
       container: heading,
+      preferred: false,
     };
   }
 
   return {
     mode: 'body',
     container: doc.body,
+    preferred: false,
   };
 }
 
