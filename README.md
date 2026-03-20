@@ -9,15 +9,13 @@ The first version is intentionally narrow:
 - RYM album pages only
 - RED and OPS lookup through their documented browse APIs
 - up to one request per configured tracker on each page view
-- badge placement next to RYM's existing streaming or integration links when
+- badge placement below RYM's existing streaming or integration links when
   that cluster is detectable, with a title-area fallback otherwise
 
 ## Install
 
 1. Install [Violentmonkey](https://violentmonkey.github.io/).
-2. Open the raw userscript URL:
-
-   `https://raw.githubusercontent.com/tomerh2001/redacted-on-rym-userscript/main/dist/redacted-on-rym.user.js`
+2. [Click here to install](https://raw.githubusercontent.com/tomerh2001/redacted-on-rym-userscript/main/dist/redacted-on-rym.user.js).
 
 3. Confirm the install prompt in Violentmonkey.
 4. Open the Violentmonkey menu for the script and choose `Set RED API key`
