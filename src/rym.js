@@ -160,6 +160,15 @@ export function findIntegrationContainer(doc = document) {
 }
 
 export function findBadgeMount(doc = document) {
+  const integrationContainer = findIntegrationContainer(doc);
+  if (integrationContainer) {
+    return {
+      mode: 'integration',
+      container: integrationContainer,
+      preferred: true,
+    };
+  }
+
   const heading = doc.querySelector('h1');
   if (heading) {
     return {

@@ -4,12 +4,89 @@ import test from 'node:test';
 import {
   decodeRymSlug,
   findBadgeMount,
+  findIntegrationContainer,
   findLikelyReleaseYear,
   isSupportedIntegrationHref,
   normalizeMatchKey,
   parseReleasePath,
   parseReleaseTitle,
 } from '../src/rym.js';
+
+function createMockElement(name) {
+  return {
+    name,
+    parentElement: null,
+    ownerDocument: null,
+    links: [],
+    descendants: [],
+    contains(node) {
+      return this === node || this.descendants.includes(node);
+    },
+    querySelectorAll(selector) {
+      if (selector === 'a[href]') {
+        return this.links;
+      }
+
+      if (selector === '*') {
+        return this.descendants;
+      }
+
+      return [];
+    },
+  };
+}
+
+function buildIntegrationFixture() {
+  const body = createMockElement('body');
+  const column = createMockElement('column');
+  const mediaLinks = createMockElement('media-links');
+  const heading = createMockElement('heading');
+  const spotifyLink = createMockElement('spotify');
+  spotifyLink.href = 'https://open.spotify.com/album/example';
+  const appleLink = createMockElement('apple');
+  appleLink.href = 'https://music.apple.com/us/album/example/1';
+  const wikiLink = createMockElement('wiki');
+  wikiLink.href = 'https://rateyourmusic.com/wiki/example';
+
+  mediaLinks.parentElement = column;
+  mediaLinks.descendants = [spotifyLink, appleLink];
+  mediaLinks.links = [spotifyLink, appleLink];
+
+  column.parentElement = body;
+  column.descendants = [mediaLinks, spotifyLink, appleLink, wikiLink];
+  column.links = [spotifyLink, appleLink, wikiLink];
+
+  spotifyLink.parentElement = mediaLinks;
+  spotifyLink.ownerDocument = { body };
+  appleLink.parentElement = mediaLinks;
+  appleLink.ownerDocument = { body };
+  wikiLink.parentElement = column;
+  wikiLink.ownerDocument = { body };
+
+  const doc = {
+    body,
+    querySelector(selector) {
+      if (selector === 'h1') {
+        return heading;
+      }
+
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === 'a[href]') {
+        return [spotifyLink, appleLink, wikiLink];
+      }
+
+      return [];
+    },
+  };
+
+  return {
+    doc,
+    mediaLinks,
+    heading,
+  };
+}
 
 test('parseReleasePath extracts album metadata from a RYM album URL', () => {
   assert.deepEqual(parseReleasePath('/release/album/james-blake/trying-times/'), {
@@ -52,7 +129,23 @@ test('isSupportedIntegrationHref identifies likely streaming or buy-link hosts',
   assert.equal(isSupportedIntegrationHref('https://rateyourmusic.com/release/album/foo/bar/'), false);
 });
 
-test('findBadgeMount prefers the page heading when present', () => {
+test('findIntegrationContainer finds the streaming links row', () => {
+  const { doc, mediaLinks } = buildIntegrationFixture();
+
+  assert.equal(findIntegrationContainer(doc), mediaLinks);
+});
+
+test('findBadgeMount prefers the streaming links row when present', () => {
+  const { doc, mediaLinks } = buildIntegrationFixture();
+
+  assert.deepEqual(findBadgeMount(doc), {
+    mode: 'integration',
+    container: mediaLinks,
+    preferred: true,
+  });
+});
+
+test('findBadgeMount falls back to the page heading when integrations are unavailable', () => {
   const heading = { tagName: 'H1' };
   const doc = {
     querySelector(selector) {
@@ -61,6 +154,9 @@ test('findBadgeMount prefers the page heading when present', () => {
       }
 
       return null;
+    },
+    querySelectorAll() {
+      return [];
     },
   };
 
@@ -80,6 +176,9 @@ test('findBadgeMount falls back to body when the heading is unavailable', () => 
       }
 
       return null;
+    },
+    querySelectorAll() {
+      return [];
     },
     body,
   };

@@ -9,7 +9,7 @@ The first version is intentionally narrow:
 - RYM album pages only
 - RED and OPS lookup through their documented browse APIs
 - up to one request per configured tracker on each page view
-- badge placement directly below the release title in the page header
+- badge placement directly below the Apple Music / Spotify / other streaming links row when present, with a heading fallback on simpler pages
 
 ## Install
 
@@ -69,4 +69,4 @@ Then open:
 
 The fixture preloads mock RED and OPS credentials plus mocked tracker API
 responses, so the built userscript should render `RED on site` and
-`OPS not found` directly below the `Trying Times` page heading.
+`OPS not found` directly below the fixture's media-links row.

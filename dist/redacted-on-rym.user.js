@@ -20,6 +20,15 @@
 (() => {
   // src/rym.js
   var RELEASE_PATH_RE = /^\/release\/([^/]+)\/([^/]+)\/([^/]+)\/?$/i;
+  var STREAMING_HOST_SUFFIXES = [
+    "spotify.com",
+    "apple.com",
+    "tidal.com",
+    "deezer.com",
+    "bandcamp.com",
+    "soundcloud.com",
+    "youtube.com"
+  ];
   function normalizeWhitespace(value) {
     return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
   }
@@ -83,7 +92,58 @@
   function normalizeMatchKey(value) {
     return normalizeWhitespace(String(value ?? "")).normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[&+]/g, " and ").replace(/['’`´]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").toLowerCase().trim();
   }
+  function isSupportedIntegrationHref(href) {
+    try {
+      const url = new URL(href, "https://rateyourmusic.com");
+      const hostname = url.hostname.toLowerCase();
+      return STREAMING_HOST_SUFFIXES.some((suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`));
+    } catch {
+      return false;
+    }
+  }
+  function countServiceLinks(container, serviceLinks) {
+    return serviceLinks.filter((link) => container.contains(link)).length;
+  }
+  function collectCandidateContainers(link) {
+    const candidates = [];
+    let current = link.parentElement;
+    let depth = 0;
+    const stopAt = link.ownerDocument?.body ?? null;
+    while (current && current !== stopAt && depth < 6) {
+      candidates.push({ element: current, depth });
+      current = current.parentElement;
+      depth += 1;
+    }
+    return candidates;
+  }
+  function findIntegrationContainer(doc = document) {
+    const serviceLinks = [...doc.querySelectorAll("a[href]")].filter((link) => isSupportedIntegrationHref(link.href));
+    if (serviceLinks.length < 2) {
+      return null;
+    }
+    const candidates = serviceLinks.flatMap((link) => collectCandidateContainers(link));
+    const scoredCandidates = candidates.map((candidate) => {
+      const serviceLinkCount = countServiceLinks(candidate.element, serviceLinks);
+      const allLinkCount = candidate.element.querySelectorAll("a[href]").length;
+      const descendantCount = candidate.element.querySelectorAll("*").length;
+      return {
+        ...candidate,
+        serviceLinkCount,
+        allLinkCount,
+        descendantCount
+      };
+    }).filter((candidate) => candidate.serviceLinkCount >= 2 && candidate.allLinkCount <= 12 && candidate.descendantCount <= 80).sort((left, right) => left.allLinkCount - right.allLinkCount || left.descendantCount - right.descendantCount || right.serviceLinkCount - left.serviceLinkCount || left.depth - right.depth);
+    return scoredCandidates[0]?.element ?? null;
+  }
   function findBadgeMount(doc = document) {
+    const integrationContainer = findIntegrationContainer(doc);
+    if (integrationContainer) {
+      return {
+        mode: "integration",
+        container: integrationContainer,
+        preferred: true
+      };
+    }
     const heading = doc.querySelector("h1");
     if (heading) {
       return {
