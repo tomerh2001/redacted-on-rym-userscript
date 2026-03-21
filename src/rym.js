@@ -10,7 +10,7 @@ const STREAMING_HOST_SUFFIXES = [
   'youtube.com',
 ];
 
-function normalizeWhitespace(value) {
+export function normalizeWhitespace(value) {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 }
 
@@ -54,8 +54,8 @@ function readHeadingText(doc = document) {
   return normalizeWhitespace(doc.querySelector('h1')?.textContent ?? '');
 }
 
-function isSupportedReleaseKind(releaseKind) {
-  return releaseKind === 'album' || releaseKind === 'single';
+export function isSupportedReleaseKind(releaseKind) {
+  return releaseKind === 'album' || releaseKind === 'ep' || releaseKind === 'single';
 }
 
 export function decodeRymSlug(slug) {

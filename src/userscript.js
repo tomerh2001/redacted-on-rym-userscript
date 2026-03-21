@@ -1,8 +1,14 @@
+import { extractChartEntries } from './charts.js';
 import { TRACKERS, lookupOnTracker } from './trackers.js';
 import { extractRymPageMetadata, findBadgeMount } from './rym.js';
 
 const STYLE_ID = 'red-on-rym-styles';
 const BADGE_ATTR = 'data-red-on-rym-badge';
+const CHART_BADGE_ATTR = 'data-red-on-rym-chart-badge';
+const TRACKER_MIN_INTERVAL_MS = 1_200;
+
+const trackerQueueByHost = new Map();
+const trackerNextRequestAtByHost = new Map();
 
 function normalizeCredential(rawValue) {
   return typeof rawValue === 'string' ? rawValue.trim() : '';
@@ -35,6 +41,15 @@ function addStyles() {
       margin: 0;
       width: auto;
       flex-basis: auto;
+    }
+
+    [${CHART_BADGE_ATTR}] {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+      pointer-events: none;
     }
 
     .red-on-rym-chip {
@@ -100,6 +115,33 @@ function addStyles() {
       color: #ff8d8d;
     }
 
+    .red-on-rym-reveal {
+      pointer-events: auto;
+      appearance: none;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 999px;
+      background: rgba(17, 22, 28, 0.86);
+      color: #f5f7fa;
+      min-height: 42px;
+      padding: 10px 16px;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(14px);
+    }
+
+    .red-on-rym-reveal:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+
+    .red-on-rym-reveal:disabled {
+      opacity: 0.72;
+      cursor: progress;
+    }
+
     @media (max-width: 640px) {
       [${BADGE_ATTR}] {
         left: max(12px, env(safe-area-inset-left));
@@ -111,6 +153,11 @@ function addStyles() {
 
       .red-on-rym-chip {
         flex: 1 1 calc(50% - 4px);
+      }
+
+      .red-on-rym-reveal {
+        width: 100%;
+        justify-content: center;
       }
     }
   `;
@@ -166,7 +213,24 @@ function registerMenuCommands() {
   }
 }
 
-function requestJson(url, authorizationHeader) {
+function wait(durationMs) {
+  return new Promise(resolve => {
+    window.setTimeout(resolve, durationMs);
+  });
+}
+
+async function waitForTrackerWindow(hostname) {
+  const now = Date.now();
+  const scheduledAt = Math.max(now, trackerNextRequestAtByHost.get(hostname) ?? now);
+  trackerNextRequestAtByHost.set(hostname, scheduledAt + TRACKER_MIN_INTERVAL_MS);
+
+  const waitMs = scheduledAt - now;
+  if (waitMs > 0) {
+    await wait(waitMs);
+  }
+}
+
+function performJsonRequest(url, authorizationHeader) {
   return new Promise((resolve, reject) => {
     GM_xmlhttpRequest({
       method: 'GET',
@@ -213,6 +277,21 @@ function requestJson(url, authorizationHeader) {
       },
     });
   });
+}
+
+// Serialize requests per tracker host so manual chart checks cannot burst fast enough to trip bans.
+function requestJson(url, authorizationHeader) {
+  const hostname = new URL(url).hostname;
+  const previousRequest = trackerQueueByHost.get(hostname) ?? Promise.resolve();
+  const nextRequest = previousRequest
+    .catch(() => {})
+    .then(async () => {
+      await waitForTrackerWindow(hostname);
+      return performJsonRequest(url, authorizationHeader);
+    });
+
+  trackerQueueByHost.set(hostname, nextRequest.then(() => undefined, () => undefined));
+  return nextRequest;
 }
 
 function placeBadgeHost(host, mount) {
@@ -275,48 +354,48 @@ function updateBadges(states) {
   host.replaceChildren(...states.map(renderBadge));
 }
 
-async function main() {
-  addStyles();
-  registerMenuCommands();
+function buildConfigState(tracker) {
+  return {
+    trackerLabel: tracker.label,
+    status: 'config',
+    label: 'add key',
+    title: `Set a ${tracker.credentialMenuLabel} from the Violentmonkey menu to enable ${tracker.label} lookups.`,
+  };
+}
 
-  const metadata = extractRymPageMetadata(document, window.location);
-  if (!metadata) {
-    return;
-  }
+function buildPendingState(tracker, metadata) {
+  return {
+    trackerLabel: tracker.label,
+    status: 'pending',
+    label: 'checking...',
+    title: metadata.pageKind === 'artist'
+      ? `Checking ${tracker.label} for ${metadata.artist}.`
+      : `Checking ${tracker.label} for ${metadata.artist} - ${metadata.title}.`,
+  };
+}
 
-  updateBadges(
-    TRACKERS.map(tracker => {
-      const credential = getStoredCredential(tracker.credentialStorageKey);
-      if (!credential) {
-        return {
-          trackerLabel: tracker.label,
-          status: 'config',
-          label: 'add key',
-          title: `Set a ${tracker.credentialMenuLabel} from the Violentmonkey menu to enable ${tracker.label} lookups.`,
-        };
-      }
+function buildUnexpectedErrorState(tracker) {
+  return {
+    trackerLabel: tracker.label,
+    status: 'error',
+    label: 'lookup failed',
+    title: `Unexpected ${tracker.label} userscript failure.`,
+  };
+}
 
-      return {
-        trackerLabel: tracker.label,
-        status: 'pending',
-        label: 'checking...',
-        title: metadata.pageKind === 'artist'
-          ? `Checking ${tracker.label} for ${metadata.artist}.`
-          : `Checking ${tracker.label} for ${metadata.artist} - ${metadata.title}.`,
-      };
-    }),
-  );
+function buildInitialStates(metadata) {
+  return TRACKERS.map(tracker => {
+    const credential = getStoredCredential(tracker.credentialStorageKey);
+    return credential ? buildPendingState(tracker, metadata) : buildConfigState(tracker);
+  });
+}
 
-  const results = await Promise.all(
+async function resolveTrackerStates(metadata) {
+  return Promise.all(
     TRACKERS.map(async tracker => {
       const credential = getStoredCredential(tracker.credentialStorageKey);
       if (!credential) {
-        return {
-          trackerLabel: tracker.label,
-          status: 'config',
-          label: 'add key',
-          title: `Set a ${tracker.credentialMenuLabel} from the Violentmonkey menu to enable ${tracker.label} lookups.`,
-        };
+        return buildConfigState(tracker);
       }
 
       try {
@@ -338,17 +417,86 @@ async function main() {
       }
     }),
   );
+}
 
-  updateBadges(results);
+function ensureChartBadgeHost(anchor) {
+  const mount = anchor.closest('h1, h2, h3, h4, h5, h6') ?? anchor;
+  const existingHost = mount.nextElementSibling;
+  if (existingHost?.hasAttribute(CHART_BADGE_ATTR)) {
+    return existingHost;
+  }
+
+  const host = document.createElement('div');
+  host.setAttribute(CHART_BADGE_ATTR, '');
+  mount.insertAdjacentElement('afterend', host);
+  return host;
+}
+
+function createRevealButton(metadata) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'red-on-rym-reveal';
+  button.textContent = 'Show RED / OPS';
+  button.title = metadata.pageKind === 'artist'
+    ? `Reveal RED and OPS availability for ${metadata.artist}.`
+    : `Reveal RED and OPS availability for ${metadata.artist} - ${metadata.title}.`;
+  return button;
+}
+
+async function revealChartEntry(host, metadata) {
+  host.replaceChildren(...buildInitialStates(metadata).map(renderBadge));
+  try {
+    const results = await resolveTrackerStates(metadata);
+    host.replaceChildren(...results.map(renderBadge));
+  } catch {
+    host.replaceChildren(...TRACKERS.map(buildUnexpectedErrorState).map(renderBadge));
+  }
+}
+
+function initializeChartEntries(entries) {
+  for (const entry of entries) {
+    const host = ensureChartBadgeHost(entry.anchor);
+    if (host.childElementCount > 0) {
+      continue;
+    }
+
+    const button = createRevealButton(entry.metadata);
+    button.addEventListener('click', () => {
+      if (button.disabled) {
+        return;
+      }
+
+      button.disabled = true;
+      void revealChartEntry(host, entry.metadata);
+    });
+    host.append(button);
+  }
+}
+
+async function main() {
+  addStyles();
+  registerMenuCommands();
+
+  const chartEntries = extractChartEntries(document, window.location);
+  if (chartEntries.length > 0) {
+    initializeChartEntries(chartEntries);
+    return;
+  }
+
+  const metadata = extractRymPageMetadata(document, window.location);
+  if (!metadata) {
+    return;
+  }
+
+  updateBadges(buildInitialStates(metadata));
+  updateBadges(await resolveTrackerStates(metadata));
 }
 
 main().catch(() => {
-  updateBadges(
-    TRACKERS.map(tracker => ({
-      trackerLabel: tracker.label,
-      status: 'error',
-      label: 'lookup failed',
-      title: `Unexpected ${tracker.label} userscript failure.`,
-    })),
-  );
+  const metadata = extractRymPageMetadata(document, window.location);
+  if (!metadata) {
+    return;
+  }
+
+  updateBadges(TRACKERS.map(buildUnexpectedErrorState));
 });

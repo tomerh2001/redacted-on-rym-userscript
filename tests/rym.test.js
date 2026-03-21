@@ -274,3 +274,29 @@ test('extractRymPageMetadata accepts supported non-album release types like sing
     },
   );
 });
+
+test('extractRymPageMetadata accepts supported non-album release types like EPs', () => {
+  const doc = {
+    title: 'Moon Safari by Air (EP): Reviews, Ratings, Credits - Rate Your Music',
+    querySelector() {
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+  };
+
+  assert.deepEqual(
+    extractRymPageMetadata(
+      doc,
+      { pathname: '/release/ep/air/moon-safari/' },
+    ),
+    {
+      pageKind: 'release',
+      releaseKind: 'ep',
+      artist: 'Air',
+      title: 'Moon Safari',
+      year: null,
+    },
+  );
+});

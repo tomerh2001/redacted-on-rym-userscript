@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Esoteric charts for album, EP, and single releases in the 2020s - Rate Your Music</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, system-ui, sans-serif;
+      }
+
+      body {
+        margin: 0;
+        background: #0d131c;
+        color: #eef3ff;
+      }
+
+      .page {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 40px 24px 56px;
+      }
+
+      .page h1 {
+        margin: 0 0 12px;
+        font-size: 2.5rem;
+      }
+
+      .lede {
+        max-width: 60ch;
+        color: #c6d2e5;
+        line-height: 1.6;
+      }
+
+      .chart-list {
+        margin-top: 28px;
+        display: grid;
+        gap: 18px;
+      }
+
+      .chart-item {
+        padding: 20px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+      }
+
+      .chart-item h2 {
+        margin: 0;
+        font-size: 1.25rem;
+      }
+
+      .chart-item a {
+        color: inherit;
+      }
+
+      .chart-item__meta {
+        margin-top: 10px;
+        color: #c6d2e5;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 16px;
+      }
+
+      .chart-item__meta span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>Esoteric 2020s album, EP, and single chart</h1>
+      <p class="lede">
+        Local fixture for the reveal-only chart workflow. Each result should show
+        a `Show RED / OPS` button until you click it.
+      </p>
+
+      <section class="chart-list" aria-label="Chart results">
+        <article class="chart-item">
+          <h2 class="chart_item_title">
+            <a class="chart_item_title_link" href="/release/album/james-blake/trying-times/">Trying Times</a>
+          </h2>
+          <div class="chart-item__meta">
+            <span>James Blake</span>
+            <span>Album</span>
+            <span>2026</span>
+          </div>
+        </article>
+
+        <article class="chart-item">
+          <h2 class="chart_item_title">
+            <a class="chart_item_title_link" href="/release/single/crocheted-doughnut-ring/two-little-ladies-azalea-and-rhododendron-nice/">Two Little Ladies / Azalea and Rhododendron / Nice</a>
+          </h2>
+          <div class="chart-item__meta">
+            <span>Crocheted Doughnut Ring</span>
+            <span>Single</span>
+            <span>2009</span>
+          </div>
+        </article>
+
+        <article class="chart-item">
+          <h2 class="chart_item_title">
+            <a class="chart_item_title_link" href="/release/ep/air/moon-safari/">Moon Safari</a>
+          </h2>
+          <div class="chart-item__meta">
+            <span>Air</span>
+            <span>EP</span>
+            <span>1998</span>
+          </div>
+        </article>
+      </section>
+    </div>
+
+    <script>
+      const storage = new Map([
+        ['redApiKey', 'fixture-red-key'],
+        ['opsApiToken', 'fixture-ops-token'],
+      ]);
+
+      function buildBrowsePayload(url) {
+        const artist = url.searchParams.get('artistname');
+        const title = url.searchParams.get('groupname');
+
+        if (url.hostname === 'redacted.sh') {
+          if (artist === 'James Blake' && title === 'Trying Times') {
+            return {
+              status: 'success',
+              response: {
+                results: [
+                  {
+                    groupId: 16871267,
+                    groupName: 'Trying Times',
+                    artist: 'James Blake',
+                    groupYear: 2026,
+                    torrents: [{ id: 1 }],
+                  },
+                ],
+              },
+            };
+          }
+
+          if (artist === 'Air' && title === 'Moon Safari') {
+            return {
+              status: 'success',
+              response: {
+                results: [
+                  {
+                    groupId: 55199,
+                    groupName: 'Moon Safari',
+                    artist: 'Air',
+                    groupYear: 1998,
+                    torrents: [{ id: 1 }, { id: 2 }],
+                  },
+                ],
+              },
+            };
+          }
+        }
+
+        if (url.hostname === 'orpheus.network' && artist === 'Crocheted Doughnut Ring') {
+          return {
+            status: 'success',
+            response: {
+              results: [
+                {
+                  groupId: 92015,
+                  groupName: 'Two Little Ladies / Azalea and Rhododendron / Nice',
+                  artist: 'Crocheted Doughnut Ring',
+                  groupYear: 2009,
+                  torrents: [{ id: 1 }],
+                },
+              ],
+            },
+          };
+        }
+
+        return {
+          status: 'success',
+          response: {
+            results: [],
+          },
+        };
+      }
+
+      window.GM_getValue = (key, fallback) => storage.has(key) ? storage.get(key) : fallback;
+      window.GM_setValue = (key, value) => storage.set(key, value);
+      window.GM_registerMenuCommand = () => {};
+      window.GM_xmlhttpRequest = options => {
+        const url = new URL(options.url);
+        const payload = buildBrowsePayload(url);
+
+        window.setTimeout(() => {
+          options.onload?.({
+            status: 200,
+            responseText: JSON.stringify(payload),
+          });
+        }, 20);
+      };
+    </script>
+    <script src="/dist/redacted-on-rym.user.js"></script>
+  </body>
+</html>

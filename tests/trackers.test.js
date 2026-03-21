@@ -28,6 +28,14 @@ const singleMetadata = {
   year: 2009,
 };
 
+const epMetadata = {
+  pageKind: 'release',
+  releaseKind: 'ep',
+  artist: 'Air',
+  title: 'Moon Safari',
+  year: 1998,
+};
+
 const artistMetadata = {
   pageKind: 'artist',
   artist: 'Anna Zak',
@@ -61,6 +69,15 @@ test('buildBrowseUrl maps singles to the tracker single release type', () => {
   assert.equal(url.searchParams.get('groupname'), 'Two Little Ladies / Azalea and Rhododendron / Nice');
   assert.equal(url.searchParams.get('releasetype'), '9');
   assert.equal(url.searchParams.get('year'), '2009');
+});
+
+test('buildBrowseUrl maps EPs to the tracker EP release type', () => {
+  const red = TRACKERS.find(tracker => tracker.id === 'red');
+  const url = new URL(buildBrowseUrl(red, epMetadata));
+  assert.equal(url.searchParams.get('artistname'), 'Air');
+  assert.equal(url.searchParams.get('groupname'), 'Moon Safari');
+  assert.equal(url.searchParams.get('releasetype'), '5');
+  assert.equal(url.searchParams.get('year'), '1998');
 });
 
 test('buildSearchPageUrl links to the equivalent manual tracker search', () => {

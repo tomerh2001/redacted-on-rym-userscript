@@ -85,5 +85,6 @@ server.listen(port, '127.0.0.1', () => {
   console.log(`Fixture server running at:
   http://127.0.0.1:${port}/release/album/james-blake/trying-times/
   http://127.0.0.1:${port}/release/single/crocheted-doughnut-ring/two-little-ladies-azalea-and-rhododendron-nice/
-  http://127.0.0.1:${port}/artist/anna-zak/`);
+  http://127.0.0.1:${port}/artist/anna-zak/
+  http://127.0.0.1:${port}/charts/esoteric/album,ep,single/2020s/`);
 });
