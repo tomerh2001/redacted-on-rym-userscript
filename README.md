@@ -15,7 +15,7 @@ The current scope stays intentionally focused:
 ## Install
 
 1. Install [Violentmonkey](https://violentmonkey.github.io/).
-2. [Click here to install](https://raw.githubusercontent.com/tomerh2001/redacted-on-rym-userscript/main/dist/redacted-on-rym.user.js).
+2. [Click here to install](https://github.com/tomerh2001/redacted-on-rym-userscript/releases/latest/download/redacted-on-rym.user.js).
 
 3. Confirm the install prompt in Violentmonkey.
 4. Open the Violentmonkey menu for the script and choose `Set RED API key`
@@ -68,6 +68,10 @@ On every push to `main`, GitHub Actions runs the CI checks first and then runs
 tag/GitHub release, and commits the versioned files back to `main`
 automatically. Manual version bumps should no longer be necessary for normal
 feature or bugfix work.
+
+The install and update URLs intentionally point at the latest GitHub release
+asset instead of `raw.githubusercontent.com/main/...`, because the raw branch
+CDN can lag behind the tagged release even after `main` has the newer build.
 
 ## Local Browser Fixture
 

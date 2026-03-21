@@ -16,8 +16,8 @@
 // @run-at       document-idle
 // @homepageURL  https://github.com/tomerh2001/redacted-on-rym-userscript
 // @supportURL   https://github.com/tomerh2001/redacted-on-rym-userscript/issues
-// @downloadURL  https://raw.githubusercontent.com/tomerh2001/redacted-on-rym-userscript/main/dist/redacted-on-rym.user.js
-// @updateURL    https://raw.githubusercontent.com/tomerh2001/redacted-on-rym-userscript/main/dist/redacted-on-rym.user.js
+// @downloadURL  https://github.com/tomerh2001/redacted-on-rym-userscript/releases/latest/download/redacted-on-rym.user.js
+// @updateURL    https://github.com/tomerh2001/redacted-on-rym-userscript/releases/latest/download/redacted-on-rym.user.js
 // ==/UserScript==
 (() => {
   // src/rym.js

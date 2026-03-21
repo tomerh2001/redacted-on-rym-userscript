@@ -5,7 +5,17 @@ export default {
     ['@semantic-release/commit-analyzer', { preset: 'conventionalcommits' }],
     ['@semantic-release/release-notes-generator', { preset: 'conventionalcommits' }],
     ['@semantic-release/npm', { npmPublish: false }],
-    ['@semantic-release/github'],
+    [
+      '@semantic-release/github',
+      {
+        assets: [
+          {
+            path: 'dist/redacted-on-rym.user.js',
+            label: 'Violentmonkey userscript',
+          },
+        ],
+      },
+    ],
     [
       '@semantic-release/git',
       {
