@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Anna Zak Albums: songs, discography, biography, and listening guide - Rate Your Music</title>
+    <meta property="og:title" content="Anna Zak Albums: songs, discography, biography, and listening guide - Rate Your Music">
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, system-ui, sans-serif;
+      }
+
+      body {
+        margin: 0;
+        background: #0d131c;
+        color: #eef3ff;
+      }
+
+      .page {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 40px 24px 56px;
+      }
+
+      .artist-hero {
+        display: grid;
+        grid-template-columns: 220px 1fr;
+        gap: 28px;
+        align-items: start;
+      }
+
+      .portrait {
+        aspect-ratio: 1 / 1;
+        border-radius: 18px;
+        background: linear-gradient(135deg, #34274a 0%, #151b23 100%);
+      }
+
+      .artist-hero h1 {
+        margin: 0;
+        font-size: 3.25rem;
+        line-height: 1.02;
+      }
+
+      .artist-summary {
+        margin-top: 18px;
+        max-width: 52ch;
+        color: #c6d2e5;
+        font-size: 1.05rem;
+        line-height: 1.6;
+      }
+
+      .artist-stats {
+        margin-top: 24px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .artist-stats span {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 110px;
+        padding: 10px 14px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.06);
+        color: #dce6f7;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <section class="artist-hero">
+        <div class="portrait" aria-hidden="true"></div>
+        <div>
+          <h1>Anna Zak</h1>
+          <p class="artist-summary">
+            Israeli pop singer and actor with a growing discography of dance-pop
+            singles and collaborations.
+          </p>
+          <div class="artist-stats" aria-label="Artist stats">
+            <span>7 releases</span>
+            <span>2 albums</span>
+            <span>5 singles</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const storage = new Map([
+        ['redApiKey', 'fixture-red-key'],
+        ['opsApiToken', 'fixture-ops-token'],
+      ]);
+
+      window.GM_getValue = (key, fallback) => storage.has(key) ? storage.get(key) : fallback;
+      window.GM_setValue = (key, value) => storage.set(key, value);
+      window.GM_registerMenuCommand = () => {};
+      window.GM_xmlhttpRequest = options => {
+        const url = new URL(options.url);
+        const payload = url.hostname === 'redacted.sh'
+          ? {
+              status: 'success',
+              response: {
+                id: 991,
+                name: 'Anna Zak',
+                statistics: {
+                  numGroups: 7,
+                  numTorrents: 19,
+                },
+              },
+            }
+          : {
+              status: 'failure',
+            };
+
+        window.setTimeout(() => {
+          options.onload?.({
+            status: 200,
+            responseText: JSON.stringify(payload),
+          });
+        }, 20);
+      };
+    </script>
+    <script src="/dist/redacted-on-rym.user.js"></script>
+  </body>
+</html>

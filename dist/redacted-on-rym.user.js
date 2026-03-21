@@ -2,9 +2,10 @@
 // @name         RED + OPS on RYM
 // @namespace    https://github.com/tomerh2001/redacted-on-rym-userscript
 // @version      0.2.6
-// @description  Show whether the current Rate Your Music album page already exists on RED or OPS.
+// @description  Show whether the current Rate Your Music album or artist page already exists on RED or OPS.
 // @author       Tomer Horowitz
 // @match        https://rateyourmusic.com/release/album/*
+// @match        https://rateyourmusic.com/artist/*
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
 // @grant        GM_setValue
@@ -20,6 +21,7 @@
 (() => {
   // src/rym.js
   var RELEASE_PATH_RE = /^\/release\/([^/]+)\/([^/]+)\/([^/]+)\/?$/i;
+  var ARTIST_PATH_RE = /^\/artist\/([^/]+)\/?$/i;
   var STREAMING_HOST_SUFFIXES = [
     "spotify.com",
     "apple.com",
@@ -37,6 +39,20 @@
       return null;
     }
     return value.split(" ").map((part) => part ? part.charAt(0).toUpperCase() + part.slice(1) : part).join(" ");
+  }
+  function stripRymTitleSuffix(rawTitle) {
+    return normalizeWhitespace(
+      String(rawTitle ?? "").replace(/\s+-\s+Rate Your Music.*$/i, "").replace(/\s+-\s+RYM.*$/i, "")
+    );
+  }
+  function readPageTitle(doc = document) {
+    return doc.querySelector('meta[property="og:title"]')?.content ?? doc.querySelector('meta[name="twitter:title"]')?.content ?? doc.title ?? "";
+  }
+  function readPageDescription(doc = document) {
+    return doc.querySelector('meta[property="og:description"]')?.content ?? doc.querySelector('meta[name="description"]')?.content ?? "";
+  }
+  function readHeadingText(doc = document) {
+    return normalizeWhitespace(doc.querySelector("h1")?.textContent ?? "");
   }
   function decodeRymSlug(slug) {
     if (typeof slug !== "string" || !slug.trim()) {
@@ -64,9 +80,7 @@
     };
   }
   function parseReleaseTitle(rawTitle) {
-    const cleaned = normalizeWhitespace(
-      String(rawTitle ?? "").replace(/\s+-\s+Rate Your Music.*$/i, "").replace(/\s+-\s+RYM.*$/i, "")
-    );
+    const cleaned = stripRymTitleSuffix(rawTitle);
     if (!cleaned) {
       return null;
     }
@@ -78,6 +92,35 @@
       title: normalizeWhitespace(match[1]),
       artist: normalizeWhitespace(match[2])
     };
+  }
+  function parseArtistPath(pathname) {
+    const match = ARTIST_PATH_RE.exec(pathname ?? "");
+    if (!match) {
+      return null;
+    }
+    return {
+      artistSlug: match[1],
+      artistGuess: decodeRymSlug(match[1])
+    };
+  }
+  function parseArtistTitle(rawTitle) {
+    const cleaned = stripRymTitleSuffix(rawTitle);
+    if (!cleaned) {
+      return null;
+    }
+    const patterns = [
+      /^(.*?)\s+Albums?:\s+/i,
+      /^(.*?)\s+Discography:\s+/i,
+      /^(.*?)\s+Songs:\s+/i,
+      /^(.*?)\s+Music profile\b/i
+    ];
+    for (const pattern of patterns) {
+      const match = cleaned.match(pattern);
+      if (match) {
+        return normalizeWhitespace(match[1]);
+      }
+    }
+    return null;
   }
   function findLikelyReleaseYear(text) {
     if (typeof text !== "string" || !text.trim()) {
@@ -163,15 +206,33 @@
     if (!pathInfo || pathInfo.releaseKind !== "album") {
       return null;
     }
-    const titleMeta = doc.querySelector('meta[property="og:title"]')?.content ?? doc.querySelector('meta[name="twitter:title"]')?.content ?? doc.title;
-    const descriptionMeta = doc.querySelector('meta[property="og:description"]')?.content ?? doc.querySelector('meta[name="description"]')?.content ?? "";
+    const titleMeta = readPageTitle(doc);
+    const descriptionMeta = readPageDescription(doc);
     const parsedTitle = parseReleaseTitle(titleMeta);
     return {
+      pageKind: "release",
       releaseKind: pathInfo.releaseKind,
       artist: parsedTitle?.artist ?? pathInfo.artistGuess,
       title: parsedTitle?.title ?? pathInfo.titleGuess,
       year: findLikelyReleaseYear(descriptionMeta)
     };
+  }
+  function extractArtistMetadata(doc = document, locationObject = window.location) {
+    const pathInfo = parseArtistPath(locationObject?.pathname ?? "");
+    if (!pathInfo) {
+      return null;
+    }
+    const artist = parseArtistTitle(readPageTitle(doc)) ?? readHeadingText(doc) ?? pathInfo.artistGuess;
+    if (!artist) {
+      return null;
+    }
+    return {
+      pageKind: "artist",
+      artist
+    };
+  }
+  function extractRymPageMetadata(doc = document, locationObject = window.location) {
+    return extractReleaseMetadata(doc, locationObject) ?? extractArtistMetadata(doc, locationObject);
   }
 
   // src/trackers.js
@@ -183,8 +244,10 @@
       id: "red",
       label: "RED",
       browseEndpoint: "https://redacted.sh/ajax.php?action=browse",
+      artistEndpoint: "https://redacted.sh/ajax.php?action=artist",
       searchPage: "https://redacted.sh/torrents.php",
       groupPage: "https://redacted.sh/torrents.php",
+      artistPage: "https://redacted.sh/artist.php",
       credentialStorageKey: "redApiKey",
       credentialMenuLabel: "RED API key",
       buildAuthorizationHeader(credential) {
@@ -195,8 +258,10 @@
       id: "ops",
       label: "OPS",
       browseEndpoint: "https://orpheus.network/ajax.php?action=browse",
+      artistEndpoint: "https://orpheus.network/ajax.php?action=artist",
       searchPage: "https://orpheus.network/torrents.php",
       groupPage: "https://orpheus.network/torrents.php",
+      artistPage: "https://orpheus.network/artist.php",
       credentialStorageKey: "opsApiToken",
       credentialMenuLabel: "OPS API token",
       buildAuthorizationHeader(credential) {
@@ -227,10 +292,20 @@
     }
     return url.toString();
   }
+  function buildArtistLookupUrl(tracker, metadata) {
+    const url = new URL(tracker.artistEndpoint);
+    url.searchParams.set("artistname", metadata.artist);
+    url.searchParams.set("artistreleases", "1");
+    return url.toString();
+  }
   function buildSearchPageUrl(tracker, metadata) {
     const url = new URL(tracker.searchPage);
-    url.searchParams.set("searchstr", `${metadata.artist} ${metadata.title}`.trim());
     url.searchParams.set("artistname", metadata.artist);
+    if (metadata.pageKind === "artist") {
+      url.searchParams.set("searchstr", metadata.artist);
+      return url.toString();
+    }
+    url.searchParams.set("searchstr", `${metadata.artist} ${metadata.title}`.trim());
     url.searchParams.set("groupname", metadata.title);
     const releaseType = RELEASE_TYPE_IDS[metadata.releaseKind];
     if (releaseType) {
@@ -242,6 +317,27 @@
     const url = new URL(tracker.groupPage);
     url.searchParams.set("id", String(groupId));
     return url.toString();
+  }
+  function buildArtistPageUrl(tracker, artistName, artistId) {
+    const url = new URL(tracker.artistPage);
+    if (artistId) {
+      url.searchParams.set("id", String(artistId));
+    } else {
+      url.searchParams.set("artistname", artistName);
+    }
+    return url.toString();
+  }
+  function formatCount(count, singular, plural = `${singular}s`) {
+    if (!Number.isFinite(count) || count <= 0) {
+      return null;
+    }
+    return `${count} ${count === 1 ? singular : plural}.`;
+  }
+  function isLikelyMissingArtistError(error) {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+    return /responded with 404|responded with 400|unsuccessful API response/i.test(error.message);
   }
   function scoreGroupMatch(group, metadata) {
     const groupTitleKey = normalizeMatchKey(group?.groupName);
@@ -300,6 +396,47 @@
         Array.isArray(match.torrents) ? `${match.torrents.length} torrent entries in the matched group.` : null
       ].filter(Boolean).join(" ")
     };
+  }
+  async function lookupArtistOnTracker(tracker, metadata, credential, requestJson2) {
+    let payload;
+    try {
+      payload = await requestJson2(
+        buildArtistLookupUrl(tracker, metadata),
+        tracker.buildAuthorizationHeader(credential)
+      );
+    } catch (error) {
+      if (isLikelyMissingArtistError(error)) {
+        return {
+          status: "missing",
+          url: buildSearchPageUrl(tracker, metadata),
+          title: `No likely exact ${tracker.label} artist page found for ${metadata.artist}. Click to inspect ${tracker.label} search results manually.`
+        };
+      }
+      throw error;
+    }
+    const artist = payload?.response;
+    if (!artistKeysMatch(artist?.name, metadata?.artist)) {
+      return {
+        status: "missing",
+        url: buildSearchPageUrl(tracker, metadata),
+        title: `No likely exact ${tracker.label} artist page found for ${metadata.artist}. Click to inspect ${tracker.label} search results manually.`
+      };
+    }
+    return {
+      status: "found",
+      url: buildArtistPageUrl(tracker, artist.name, artist.id),
+      title: [
+        `Matched ${artist.name} on ${tracker.label}.`,
+        formatCount(Number(artist?.statistics?.numGroups), "group"),
+        formatCount(Number(artist?.statistics?.numTorrents), "torrent entry", "torrent entries")
+      ].filter(Boolean).join(" ")
+    };
+  }
+  function lookupOnTracker(tracker, metadata, credential, requestJson2) {
+    if (metadata.pageKind === "artist") {
+      return lookupArtistOnTracker(tracker, metadata, credential, requestJson2);
+    }
+    return lookupReleaseOnTracker(tracker, metadata, credential, requestJson2);
   }
 
   // src/userscript.js
@@ -550,7 +687,7 @@
   async function main() {
     addStyles();
     registerMenuCommands();
-    const metadata = extractReleaseMetadata(document, window.location);
+    const metadata = extractRymPageMetadata(document, window.location);
     if (!metadata) {
       return;
     }
@@ -569,7 +706,7 @@
           trackerLabel: tracker.label,
           status: "pending",
           label: "checking...",
-          title: `Checking ${tracker.label} for ${metadata.artist} - ${metadata.title}.`
+          title: metadata.pageKind === "artist" ? `Checking ${tracker.label} for ${metadata.artist}.` : `Checking ${tracker.label} for ${metadata.artist} - ${metadata.title}.`
         };
       })
     );
@@ -585,7 +722,7 @@
           };
         }
         try {
-          const lookupResult = await lookupReleaseOnTracker(tracker, metadata, credential, requestJson);
+          const lookupResult = await lookupOnTracker(tracker, metadata, credential, requestJson);
           return {
             trackerLabel: tracker.label,
             status: lookupResult.status,

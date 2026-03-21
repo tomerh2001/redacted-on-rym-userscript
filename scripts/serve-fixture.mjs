@@ -82,5 +82,7 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(port, '127.0.0.1', () => {
-  console.log(`Fixture server running at http://127.0.0.1:${port}/release/album/james-blake/trying-times/`);
+  console.log(`Fixture server running at:
+  http://127.0.0.1:${port}/release/album/james-blake/trying-times/
+  http://127.0.0.1:${port}/artist/anna-zak/`);
 });

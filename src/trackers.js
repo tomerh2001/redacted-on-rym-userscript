@@ -9,8 +9,10 @@ export const TRACKERS = [
     id: 'red',
     label: 'RED',
     browseEndpoint: 'https://redacted.sh/ajax.php?action=browse',
+    artistEndpoint: 'https://redacted.sh/ajax.php?action=artist',
     searchPage: 'https://redacted.sh/torrents.php',
     groupPage: 'https://redacted.sh/torrents.php',
+    artistPage: 'https://redacted.sh/artist.php',
     credentialStorageKey: 'redApiKey',
     credentialMenuLabel: 'RED API key',
     buildAuthorizationHeader(credential) {
@@ -21,8 +23,10 @@ export const TRACKERS = [
     id: 'ops',
     label: 'OPS',
     browseEndpoint: 'https://orpheus.network/ajax.php?action=browse',
+    artistEndpoint: 'https://orpheus.network/ajax.php?action=artist',
     searchPage: 'https://orpheus.network/torrents.php',
     groupPage: 'https://orpheus.network/torrents.php',
+    artistPage: 'https://orpheus.network/artist.php',
     credentialStorageKey: 'opsApiToken',
     credentialMenuLabel: 'OPS API token',
     buildAuthorizationHeader(credential) {
@@ -60,10 +64,23 @@ export function buildBrowseUrl(tracker, metadata) {
   return url.toString();
 }
 
+export function buildArtistLookupUrl(tracker, metadata) {
+  const url = new URL(tracker.artistEndpoint);
+  url.searchParams.set('artistname', metadata.artist);
+  url.searchParams.set('artistreleases', '1');
+  return url.toString();
+}
+
 export function buildSearchPageUrl(tracker, metadata) {
   const url = new URL(tracker.searchPage);
-  url.searchParams.set('searchstr', `${metadata.artist} ${metadata.title}`.trim());
   url.searchParams.set('artistname', metadata.artist);
+
+  if (metadata.pageKind === 'artist') {
+    url.searchParams.set('searchstr', metadata.artist);
+    return url.toString();
+  }
+
+  url.searchParams.set('searchstr', `${metadata.artist} ${metadata.title}`.trim());
   url.searchParams.set('groupname', metadata.title);
 
   const releaseType = RELEASE_TYPE_IDS[metadata.releaseKind];
@@ -78,6 +95,32 @@ function buildGroupUrl(tracker, groupId) {
   const url = new URL(tracker.groupPage);
   url.searchParams.set('id', String(groupId));
   return url.toString();
+}
+
+function buildArtistPageUrl(tracker, artistName, artistId) {
+  const url = new URL(tracker.artistPage);
+  if (artistId) {
+    url.searchParams.set('id', String(artistId));
+  } else {
+    url.searchParams.set('artistname', artistName);
+  }
+  return url.toString();
+}
+
+function formatCount(count, singular, plural = `${singular}s`) {
+  if (!Number.isFinite(count) || count <= 0) {
+    return null;
+  }
+
+  return `${count} ${count === 1 ? singular : plural}.`;
+}
+
+function isLikelyMissingArtistError(error) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return /responded with 404|responded with 400|unsuccessful API response/i.test(error.message);
 }
 
 export function scoreGroupMatch(group, metadata) {
@@ -149,4 +192,51 @@ export async function lookupReleaseOnTracker(tracker, metadata, credential, requ
       Array.isArray(match.torrents) ? `${match.torrents.length} torrent entries in the matched group.` : null,
     ].filter(Boolean).join(' '),
   };
+}
+
+export async function lookupArtistOnTracker(tracker, metadata, credential, requestJson) {
+  let payload;
+  try {
+    payload = await requestJson(
+      buildArtistLookupUrl(tracker, metadata),
+      tracker.buildAuthorizationHeader(credential),
+    );
+  } catch (error) {
+    if (isLikelyMissingArtistError(error)) {
+      return {
+        status: 'missing',
+        url: buildSearchPageUrl(tracker, metadata),
+        title: `No likely exact ${tracker.label} artist page found for ${metadata.artist}. Click to inspect ${tracker.label} search results manually.`,
+      };
+    }
+
+    throw error;
+  }
+
+  const artist = payload?.response;
+  if (!artistKeysMatch(artist?.name, metadata?.artist)) {
+    return {
+      status: 'missing',
+      url: buildSearchPageUrl(tracker, metadata),
+      title: `No likely exact ${tracker.label} artist page found for ${metadata.artist}. Click to inspect ${tracker.label} search results manually.`,
+    };
+  }
+
+  return {
+    status: 'found',
+    url: buildArtistPageUrl(tracker, artist.name, artist.id),
+    title: [
+      `Matched ${artist.name} on ${tracker.label}.`,
+      formatCount(Number(artist?.statistics?.numGroups), 'group'),
+      formatCount(Number(artist?.statistics?.numTorrents), 'torrent entry', 'torrent entries'),
+    ].filter(Boolean).join(' '),
+  };
+}
+
+export function lookupOnTracker(tracker, metadata, credential, requestJson) {
+  if (metadata.pageKind === 'artist') {
+    return lookupArtistOnTracker(tracker, metadata, credential, requestJson);
+  }
+
+  return lookupReleaseOnTracker(tracker, metadata, credential, requestJson);
 }

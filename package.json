@@ -1,8 +1,9 @@
 {
   "name": "redacted-on-rym-userscript",
   "version": "0.2.6",
-  "description": "Violentmonkey userscript that shows whether a Rate Your Music album page already has a match on RED or OPS.",
+  "description": "Violentmonkey userscript that shows whether a Rate Your Music album or artist page already has a match on RED or OPS.",
   "author": "Tomer Horowitz",
+  "private": true,
   "type": "module",
   "main": "./dist/redacted-on-rym.user.js",
   "files": [
@@ -14,6 +15,7 @@
   "scripts": {
     "build": "node scripts/build-userscript.mjs",
     "fixture:serve": "node scripts/serve-fixture.mjs",
+    "postversion": "npm run build",
     "test": "node --test",
     "ci": "npm test && npm run build"
   },

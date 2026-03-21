@@ -3,11 +3,14 @@ import test from 'node:test';
 
 import {
   decodeRymSlug,
+  extractRymPageMetadata,
   findBadgeMount,
   findIntegrationContainer,
   findLikelyReleaseYear,
   isSupportedIntegrationHref,
   normalizeMatchKey,
+  parseArtistPath,
+  parseArtistTitle,
   parseReleasePath,
   parseReleaseTitle,
 } from '../src/rym.js';
@@ -98,6 +101,13 @@ test('parseReleasePath extracts album metadata from a RYM album URL', () => {
   });
 });
 
+test('parseArtistPath extracts artist metadata from a RYM artist URL', () => {
+  assert.deepEqual(parseArtistPath('/artist/anna-zak/'), {
+    artistSlug: 'anna-zak',
+    artistGuess: 'Anna Zak',
+  });
+});
+
 test('decodeRymSlug turns a RYM slug into readable text', () => {
   assert.equal(decodeRymSlug('boards-of-canada'), 'Boards Of Canada');
   assert.equal(decodeRymSlug('music_has-the-right-to-children'), 'Music Has The Right To Children');
@@ -110,6 +120,13 @@ test('parseReleaseTitle extracts title and artist from common RYM title formats'
       title: 'Trying Times',
       artist: 'James Blake',
     },
+  );
+});
+
+test('parseArtistTitle extracts the artist name from common RYM artist title formats', () => {
+  assert.equal(
+    parseArtistTitle('Bad Bunny Albums: songs, discography, biography, and listening guide - Rate Your Music'),
+    'Bad Bunny',
   );
 });
 
@@ -187,5 +204,34 @@ test('findBadgeMount falls back to body when the heading is unavailable', () => 
     mode: 'body',
     container: body,
     preferred: false,
+  });
+});
+
+test('extractRymPageMetadata reads artist pages from title and heading fallbacks', () => {
+  const artistHeading = { textContent: 'Anna Zak' };
+  const ogTitle = {
+    content: 'Anna Zak Albums: songs, discography, biography, and listening guide - Rate Your Music',
+  };
+  const doc = {
+    title: 'Ignored Title',
+    querySelector(selector) {
+      if (selector === 'meta[property="og:title"]') {
+        return ogTitle;
+      }
+
+      if (selector === 'h1') {
+        return artistHeading;
+      }
+
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+  };
+
+  assert.deepEqual(extractRymPageMetadata(doc, { pathname: '/artist/anna-zak/' }), {
+    pageKind: 'artist',
+    artist: 'Anna Zak',
   });
 });

@@ -1,5 +1,5 @@
-import { TRACKERS, lookupReleaseOnTracker } from './trackers.js';
-import { extractReleaseMetadata, findBadgeMount } from './rym.js';
+import { TRACKERS, lookupOnTracker } from './trackers.js';
+import { extractRymPageMetadata, findBadgeMount } from './rym.js';
 
 const STYLE_ID = 'red-on-rym-styles';
 const BADGE_ATTR = 'data-red-on-rym-badge';
@@ -279,7 +279,7 @@ async function main() {
   addStyles();
   registerMenuCommands();
 
-  const metadata = extractReleaseMetadata(document, window.location);
+  const metadata = extractRymPageMetadata(document, window.location);
   if (!metadata) {
     return;
   }
@@ -300,7 +300,9 @@ async function main() {
         trackerLabel: tracker.label,
         status: 'pending',
         label: 'checking...',
-        title: `Checking ${tracker.label} for ${metadata.artist} - ${metadata.title}.`,
+        title: metadata.pageKind === 'artist'
+          ? `Checking ${tracker.label} for ${metadata.artist}.`
+          : `Checking ${tracker.label} for ${metadata.artist} - ${metadata.title}.`,
       };
     }),
   );
@@ -318,7 +320,7 @@ async function main() {
       }
 
       try {
-        const lookupResult = await lookupReleaseOnTracker(tracker, metadata, credential, requestJson);
+        const lookupResult = await lookupOnTracker(tracker, metadata, credential, requestJson);
         return {
           trackerLabel: tracker.label,
           status: lookupResult.status,

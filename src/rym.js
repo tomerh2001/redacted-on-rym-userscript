@@ -1,4 +1,5 @@
 const RELEASE_PATH_RE = /^\/release\/([^/]+)\/([^/]+)\/([^/]+)\/?$/i;
+const ARTIST_PATH_RE = /^\/artist\/([^/]+)\/?$/i;
 const STREAMING_HOST_SUFFIXES = [
   'spotify.com',
   'apple.com',
@@ -22,6 +23,35 @@ function toDisplayText(value) {
     .split(' ')
     .map(part => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
     .join(' ');
+}
+
+function stripRymTitleSuffix(rawTitle) {
+  return normalizeWhitespace(
+    String(rawTitle ?? '')
+      .replace(/\s+-\s+Rate Your Music.*$/i, '')
+      .replace(/\s+-\s+RYM.*$/i, ''),
+  );
+}
+
+function readPageTitle(doc = document) {
+  return (
+    doc.querySelector('meta[property="og:title"]')?.content ??
+    doc.querySelector('meta[name="twitter:title"]')?.content ??
+    doc.title ??
+    ''
+  );
+}
+
+function readPageDescription(doc = document) {
+  return (
+    doc.querySelector('meta[property="og:description"]')?.content ??
+    doc.querySelector('meta[name="description"]')?.content ??
+    ''
+  );
+}
+
+function readHeadingText(doc = document) {
+  return normalizeWhitespace(doc.querySelector('h1')?.textContent ?? '');
 }
 
 export function decodeRymSlug(slug) {
@@ -54,11 +84,7 @@ export function parseReleasePath(pathname) {
 }
 
 export function parseReleaseTitle(rawTitle) {
-  const cleaned = normalizeWhitespace(
-    String(rawTitle ?? '')
-      .replace(/\s+-\s+Rate Your Music.*$/i, '')
-      .replace(/\s+-\s+RYM.*$/i, ''),
-  );
+  const cleaned = stripRymTitleSuffix(rawTitle);
 
   if (!cleaned) {
     return null;
@@ -73,6 +99,41 @@ export function parseReleaseTitle(rawTitle) {
     title: normalizeWhitespace(match[1]),
     artist: normalizeWhitespace(match[2]),
   };
+}
+
+export function parseArtistPath(pathname) {
+  const match = ARTIST_PATH_RE.exec(pathname ?? '');
+  if (!match) {
+    return null;
+  }
+
+  return {
+    artistSlug: match[1],
+    artistGuess: decodeRymSlug(match[1]),
+  };
+}
+
+export function parseArtistTitle(rawTitle) {
+  const cleaned = stripRymTitleSuffix(rawTitle);
+  if (!cleaned) {
+    return null;
+  }
+
+  const patterns = [
+    /^(.*?)\s+Albums?:\s+/i,
+    /^(.*?)\s+Discography:\s+/i,
+    /^(.*?)\s+Songs:\s+/i,
+    /^(.*?)\s+Music profile\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = cleaned.match(pattern);
+    if (match) {
+      return normalizeWhitespace(match[1]);
+    }
+  }
+
+  return null;
 }
 
 export function findLikelyReleaseYear(text) {
@@ -185,26 +246,42 @@ export function findBadgeMount(doc = document) {
   };
 }
 
-export function extractReleaseMetadata(doc = document, locationObject = window.location) {
+function extractReleaseMetadata(doc = document, locationObject = window.location) {
   const pathInfo = parseReleasePath(locationObject?.pathname ?? '');
   if (!pathInfo || pathInfo.releaseKind !== 'album') {
     return null;
   }
 
-  const titleMeta =
-    doc.querySelector('meta[property="og:title"]')?.content ??
-    doc.querySelector('meta[name="twitter:title"]')?.content ??
-    doc.title;
-  const descriptionMeta =
-    doc.querySelector('meta[property="og:description"]')?.content ??
-    doc.querySelector('meta[name="description"]')?.content ??
-    '';
+  const titleMeta = readPageTitle(doc);
+  const descriptionMeta = readPageDescription(doc);
   const parsedTitle = parseReleaseTitle(titleMeta);
 
   return {
+    pageKind: 'release',
     releaseKind: pathInfo.releaseKind,
     artist: parsedTitle?.artist ?? pathInfo.artistGuess,
     title: parsedTitle?.title ?? pathInfo.titleGuess,
     year: findLikelyReleaseYear(descriptionMeta),
   };
+}
+
+function extractArtistMetadata(doc = document, locationObject = window.location) {
+  const pathInfo = parseArtistPath(locationObject?.pathname ?? '');
+  if (!pathInfo) {
+    return null;
+  }
+
+  const artist = parseArtistTitle(readPageTitle(doc)) ?? readHeadingText(doc) ?? pathInfo.artistGuess;
+  if (!artist) {
+    return null;
+  }
+
+  return {
+    pageKind: 'artist',
+    artist,
+  };
+}
+
+export function extractRymPageMetadata(doc = document, locationObject = window.location) {
+  return extractReleaseMetadata(doc, locationObject) ?? extractArtistMetadata(doc, locationObject);
 }
