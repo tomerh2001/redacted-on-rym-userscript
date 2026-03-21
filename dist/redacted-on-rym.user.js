@@ -317,6 +317,59 @@
     return [...bestEntriesByKey.values()].map(({ score, ...entry }) => entry);
   }
 
+  // src/rate-limit.js
+  function normalizeRateLimitState(rawState, nowMs, rateLimit) {
+    const recentRequestTimes = Array.isArray(rawState?.recentRequestTimes) ? rawState.recentRequestTimes.filter((timestamp) => Number.isFinite(timestamp)).filter((timestamp) => timestamp > nowMs - rateLimit.windowMs).sort((left, right) => left - right) : [];
+    const blockedUntilMs = Number.isFinite(rawState?.blockedUntilMs) && rawState.blockedUntilMs > nowMs ? rawState.blockedUntilMs : 0;
+    return {
+      recentRequestTimes,
+      blockedUntilMs
+    };
+  }
+  function reserveRateLimitSlot(rawState, rateLimit, nowMs) {
+    const state = normalizeRateLimitState(rawState, nowMs, rateLimit);
+    let nextAllowedAt = state.blockedUntilMs;
+    if (state.recentRequestTimes.length >= rateLimit.maxRequests) {
+      nextAllowedAt = Math.max(nextAllowedAt, state.recentRequestTimes[0] + rateLimit.windowMs);
+    }
+    if (nextAllowedAt > nowMs) {
+      return {
+        reserved: false,
+        nextAllowedAt,
+        state
+      };
+    }
+    return {
+      reserved: true,
+      nextAllowedAt: nowMs,
+      state: {
+        blockedUntilMs: state.blockedUntilMs,
+        recentRequestTimes: [...state.recentRequestTimes, nowMs]
+      }
+    };
+  }
+  function applyRateLimitBackoff(rawState, rateLimit, blockedUntilMs, nowMs) {
+    const state = normalizeRateLimitState(rawState, nowMs, rateLimit);
+    return {
+      blockedUntilMs: Math.max(state.blockedUntilMs, blockedUntilMs || 0),
+      recentRequestTimes: state.recentRequestTimes
+    };
+  }
+  function parseRetryAfterMs(responseHeaders, nowMs = Date.now()) {
+    if (typeof responseHeaders !== "string") {
+      return 0;
+    }
+    const match = responseHeaders.match(/^\s*retry-after\s*:\s*(\d+)\s*$/im);
+    if (!match) {
+      return 0;
+    }
+    const seconds = Number(match[1]);
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      return 0;
+    }
+    return nowMs + seconds * 1e3;
+  }
+
   // src/trackers.js
   var RELEASE_TYPE_IDS = {
     album: "1",
@@ -327,6 +380,7 @@
     {
       id: "red",
       label: "RED",
+      apiHost: "redacted.sh",
       browseEndpoint: "https://redacted.sh/ajax.php?action=browse",
       artistEndpoint: "https://redacted.sh/ajax.php?action=artist",
       searchPage: "https://redacted.sh/torrents.php",
@@ -334,6 +388,10 @@
       artistPage: "https://redacted.sh/artist.php",
       credentialStorageKey: "redApiKey",
       credentialMenuLabel: "RED API key",
+      rateLimit: {
+        maxRequests: 10,
+        windowMs: 1e4
+      },
       buildAuthorizationHeader(credential) {
         return credential;
       }
@@ -341,6 +399,7 @@
     {
       id: "ops",
       label: "OPS",
+      apiHost: "orpheus.network",
       browseEndpoint: "https://orpheus.network/ajax.php?action=browse",
       artistEndpoint: "https://orpheus.network/ajax.php?action=artist",
       searchPage: "https://orpheus.network/torrents.php",
@@ -348,6 +407,10 @@
       artistPage: "https://orpheus.network/artist.php",
       credentialStorageKey: "opsApiToken",
       credentialMenuLabel: "OPS API token",
+      rateLimit: {
+        maxRequests: 5,
+        windowMs: 1e4
+      },
       buildAuthorizationHeader(credential) {
         return credential.toLowerCase().startsWith("token ") ? credential : `token ${credential}`;
       }
@@ -527,9 +590,14 @@
   var STYLE_ID = "red-on-rym-styles";
   var BADGE_ATTR = "data-red-on-rym-badge";
   var CHART_BADGE_ATTR = "data-red-on-rym-chart-badge";
-  var TRACKER_MIN_INTERVAL_MS = 1200;
+  var RATE_LIMIT_STATE_STORAGE_PREFIX = "trackerRateLimitState:";
+  var RATE_LIMIT_LOCK_STORAGE_PREFIX = "trackerRateLimitLock:";
+  var RATE_LIMIT_LOCK_TIMEOUT_MS = 5e3;
+  var RATE_LIMIT_LOCK_POLL_MS = 100;
+  var trackerByHost = new Map(TRACKERS.map((tracker) => [tracker.apiHost, tracker]));
   var trackerQueueByHost = /* @__PURE__ */ new Map();
-  var trackerNextRequestAtByHost = /* @__PURE__ */ new Map();
+  var fallbackRateLimitStateByHost = /* @__PURE__ */ new Map();
+  var instanceId = `rate-limit-${Math.random().toString(36).slice(2)}`;
   function normalizeCredential(rawValue) {
     return typeof rawValue === "string" ? rawValue.trim() : "";
   }
@@ -728,16 +796,116 @@
       window.setTimeout(resolve, durationMs);
     });
   }
-  async function waitForTrackerWindow(hostname) {
-    const now = Date.now();
-    const scheduledAt = Math.max(now, trackerNextRequestAtByHost.get(hostname) ?? now);
-    trackerNextRequestAtByHost.set(hostname, scheduledAt + TRACKER_MIN_INTERVAL_MS);
-    const waitMs = scheduledAt - now;
-    if (waitMs > 0) {
-      await wait(waitMs);
+  function getTrackerRateLimitStateStorageKey(hostname) {
+    return `${RATE_LIMIT_STATE_STORAGE_PREFIX}${hostname}`;
+  }
+  function getTrackerRateLimitLockStorageKey(hostname) {
+    return `${RATE_LIMIT_LOCK_STORAGE_PREFIX}${hostname}`;
+  }
+  function parseStoredJson(rawValue, fallback) {
+    if (typeof rawValue !== "string" || !rawValue) {
+      return fallback;
+    }
+    try {
+      return JSON.parse(rawValue);
+    } catch {
+      return fallback;
     }
   }
-  function performJsonRequest(url, authorizationHeader) {
+  function readStoredRateLimitState(hostname) {
+    if (typeof GM_getValue !== "function") {
+      return fallbackRateLimitStateByHost.get(hostname) ?? null;
+    }
+    return parseStoredJson(GM_getValue(getTrackerRateLimitStateStorageKey(hostname), ""), null);
+  }
+  function writeStoredRateLimitState(hostname, state) {
+    if (typeof GM_setValue !== "function") {
+      fallbackRateLimitStateByHost.set(hostname, state);
+      return;
+    }
+    GM_setValue(getTrackerRateLimitStateStorageKey(hostname), JSON.stringify(state));
+  }
+  function readStoredRateLimitLock(hostname) {
+    if (typeof GM_getValue !== "function") {
+      return null;
+    }
+    return parseStoredJson(GM_getValue(getTrackerRateLimitLockStorageKey(hostname), ""), null);
+  }
+  function writeStoredRateLimitLock(hostname, lockState) {
+    if (typeof GM_setValue !== "function") {
+      return;
+    }
+    GM_setValue(getTrackerRateLimitLockStorageKey(hostname), JSON.stringify(lockState));
+  }
+  async function acquireStoredRateLimitLock(hostname) {
+    if (typeof GM_getValue !== "function" || typeof GM_setValue !== "function") {
+      return;
+    }
+    while (true) {
+      const now = Date.now();
+      const existingLock = readStoredRateLimitLock(hostname);
+      if (!existingLock || !Number.isFinite(existingLock.expiresAt) || existingLock.expiresAt <= now) {
+        const candidateLock = {
+          owner: instanceId,
+          expiresAt: now + RATE_LIMIT_LOCK_TIMEOUT_MS
+        };
+        writeStoredRateLimitLock(hostname, candidateLock);
+        const confirmedLock = readStoredRateLimitLock(hostname);
+        if (confirmedLock?.owner === instanceId && confirmedLock.expiresAt === candidateLock.expiresAt) {
+          return;
+        }
+      }
+      await wait(RATE_LIMIT_LOCK_POLL_MS);
+    }
+  }
+  function releaseStoredRateLimitLock(hostname) {
+    if (typeof GM_setValue !== "function") {
+      return;
+    }
+    writeStoredRateLimitLock(hostname, {
+      owner: "",
+      expiresAt: 0
+    });
+  }
+  async function reserveTrackerRateLimitSlot(hostname, rateLimit) {
+    while (true) {
+      let waitMs = 0;
+      await acquireStoredRateLimitLock(hostname);
+      try {
+        const now = Date.now();
+        const reservation = reserveRateLimitSlot(
+          readStoredRateLimitState(hostname),
+          rateLimit,
+          now
+        );
+        writeStoredRateLimitState(hostname, reservation.state);
+        if (reservation.reserved) {
+          return;
+        }
+        waitMs = Math.max(0, reservation.nextAllowedAt - now);
+      } finally {
+        releaseStoredRateLimitLock(hostname);
+      }
+      if (waitMs > 0) {
+        await wait(waitMs);
+      }
+    }
+  }
+  async function applyTrackerRateLimitBackoff(hostname, rateLimit, blockedUntilMs) {
+    await acquireStoredRateLimitLock(hostname);
+    try {
+      const nextState = applyRateLimitBackoff(
+        readStoredRateLimitState(hostname),
+        rateLimit,
+        blockedUntilMs,
+        Date.now()
+      );
+      writeStoredRateLimitState(hostname, nextState);
+    } finally {
+      releaseStoredRateLimitLock(hostname);
+    }
+  }
+  function performJsonRequest(url, authorizationHeader, onRateLimitHit) {
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: "GET",
@@ -750,7 +918,9 @@
         },
         onload(response) {
           if (response.status === 429) {
-            reject(new Error("Tracker rate limit reached"));
+            Promise.resolve(onRateLimitHit?.(response)).finally(() => {
+              reject(new Error("Tracker rate limit reached"));
+            });
             return;
           }
           if (response.status === 401 || response.status === 403) {
@@ -783,11 +953,24 @@
   }
   function requestJson(url, authorizationHeader) {
     const hostname = new URL(url).hostname;
+    const tracker = trackerByHost.get(hostname);
     const previousRequest = trackerQueueByHost.get(hostname) ?? Promise.resolve();
     const nextRequest = previousRequest.catch(() => {
     }).then(async () => {
-      await waitForTrackerWindow(hostname);
-      return performJsonRequest(url, authorizationHeader);
+      if (tracker?.rateLimit) {
+        await reserveTrackerRateLimitSlot(hostname, tracker.rateLimit);
+      }
+      return performJsonRequest(
+        url,
+        authorizationHeader,
+        async (response) => {
+          if (!tracker?.rateLimit) {
+            return;
+          }
+          const blockedUntilMs = parseRetryAfterMs(response?.responseHeaders, Date.now()) || Date.now() + tracker.rateLimit.windowMs;
+          await applyTrackerRateLimitBackoff(hostname, tracker.rateLimit, blockedUntilMs);
+        }
+      );
     });
     trackerQueueByHost.set(hostname, nextRequest.then(() => void 0, () => void 0));
     return nextRequest;

@@ -10,7 +10,7 @@ Current behavior:
 - Charts pages: per-result `Show RED / OPS` button instead of automatic lookups
 - Trackers: RED and OPS only
 - Lookups: documented tracker API endpoints only
-- Rate protection: requests are serialized per tracker with spacing between them
+- Rate protection: RED is capped at `10 requests / 10 seconds`, OPS at `5 requests / 10 seconds`, with built-in backoff after `429`
 
 The charts behavior is intentionally manual so opening a chart page does not try
 to look up every result and hammer RED or OPS.

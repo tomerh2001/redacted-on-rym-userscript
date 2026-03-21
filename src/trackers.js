@@ -10,6 +10,7 @@ export const TRACKERS = [
   {
     id: 'red',
     label: 'RED',
+    apiHost: 'redacted.sh',
     browseEndpoint: 'https://redacted.sh/ajax.php?action=browse',
     artistEndpoint: 'https://redacted.sh/ajax.php?action=artist',
     searchPage: 'https://redacted.sh/torrents.php',
@@ -17,6 +18,10 @@ export const TRACKERS = [
     artistPage: 'https://redacted.sh/artist.php',
     credentialStorageKey: 'redApiKey',
     credentialMenuLabel: 'RED API key',
+    rateLimit: {
+      maxRequests: 10,
+      windowMs: 10_000,
+    },
     buildAuthorizationHeader(credential) {
       return credential;
     },
@@ -24,6 +29,7 @@ export const TRACKERS = [
   {
     id: 'ops',
     label: 'OPS',
+    apiHost: 'orpheus.network',
     browseEndpoint: 'https://orpheus.network/ajax.php?action=browse',
     artistEndpoint: 'https://orpheus.network/ajax.php?action=artist',
     searchPage: 'https://orpheus.network/torrents.php',
@@ -31,6 +37,10 @@ export const TRACKERS = [
     artistPage: 'https://orpheus.network/artist.php',
     credentialStorageKey: 'opsApiToken',
     credentialMenuLabel: 'OPS API token',
+    rateLimit: {
+      maxRequests: 5,
+      windowMs: 10_000,
+    },
     buildAuthorizationHeader(credential) {
       return credential.toLowerCase().startsWith('token ') ? credential : `token ${credential}`;
     },

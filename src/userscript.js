@@ -1,14 +1,20 @@
 import { extractChartEntries } from './charts.js';
+import { applyRateLimitBackoff, parseRetryAfterMs, reserveRateLimitSlot } from './rate-limit.js';
 import { TRACKERS, lookupOnTracker } from './trackers.js';
 import { extractRymPageMetadata, findBadgeMount } from './rym.js';
 
 const STYLE_ID = 'red-on-rym-styles';
 const BADGE_ATTR = 'data-red-on-rym-badge';
 const CHART_BADGE_ATTR = 'data-red-on-rym-chart-badge';
-const TRACKER_MIN_INTERVAL_MS = 1_200;
+const RATE_LIMIT_STATE_STORAGE_PREFIX = 'trackerRateLimitState:';
+const RATE_LIMIT_LOCK_STORAGE_PREFIX = 'trackerRateLimitLock:';
+const RATE_LIMIT_LOCK_TIMEOUT_MS = 5_000;
+const RATE_LIMIT_LOCK_POLL_MS = 100;
 
+const trackerByHost = new Map(TRACKERS.map(tracker => [tracker.apiHost, tracker]));
 const trackerQueueByHost = new Map();
-const trackerNextRequestAtByHost = new Map();
+const fallbackRateLimitStateByHost = new Map();
+const instanceId = `rate-limit-${Math.random().toString(36).slice(2)}`;
 
 function normalizeCredential(rawValue) {
   return typeof rawValue === 'string' ? rawValue.trim() : '';
@@ -221,18 +227,138 @@ function wait(durationMs) {
   });
 }
 
-async function waitForTrackerWindow(hostname) {
-  const now = Date.now();
-  const scheduledAt = Math.max(now, trackerNextRequestAtByHost.get(hostname) ?? now);
-  trackerNextRequestAtByHost.set(hostname, scheduledAt + TRACKER_MIN_INTERVAL_MS);
+function getTrackerRateLimitStateStorageKey(hostname) {
+  return `${RATE_LIMIT_STATE_STORAGE_PREFIX}${hostname}`;
+}
 
-  const waitMs = scheduledAt - now;
-  if (waitMs > 0) {
-    await wait(waitMs);
+function getTrackerRateLimitLockStorageKey(hostname) {
+  return `${RATE_LIMIT_LOCK_STORAGE_PREFIX}${hostname}`;
+}
+
+function parseStoredJson(rawValue, fallback) {
+  if (typeof rawValue !== 'string' || !rawValue) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(rawValue);
+  } catch {
+    return fallback;
   }
 }
 
-function performJsonRequest(url, authorizationHeader) {
+function readStoredRateLimitState(hostname) {
+  if (typeof GM_getValue !== 'function') {
+    return fallbackRateLimitStateByHost.get(hostname) ?? null;
+  }
+
+  return parseStoredJson(GM_getValue(getTrackerRateLimitStateStorageKey(hostname), ''), null);
+}
+
+function writeStoredRateLimitState(hostname, state) {
+  if (typeof GM_setValue !== 'function') {
+    fallbackRateLimitStateByHost.set(hostname, state);
+    return;
+  }
+
+  GM_setValue(getTrackerRateLimitStateStorageKey(hostname), JSON.stringify(state));
+}
+
+function readStoredRateLimitLock(hostname) {
+  if (typeof GM_getValue !== 'function') {
+    return null;
+  }
+
+  return parseStoredJson(GM_getValue(getTrackerRateLimitLockStorageKey(hostname), ''), null);
+}
+
+function writeStoredRateLimitLock(hostname, lockState) {
+  if (typeof GM_setValue !== 'function') {
+    return;
+  }
+
+  GM_setValue(getTrackerRateLimitLockStorageKey(hostname), JSON.stringify(lockState));
+}
+
+async function acquireStoredRateLimitLock(hostname) {
+  if (typeof GM_getValue !== 'function' || typeof GM_setValue !== 'function') {
+    return;
+  }
+
+  while (true) {
+    const now = Date.now();
+    const existingLock = readStoredRateLimitLock(hostname);
+    if (!existingLock || !Number.isFinite(existingLock.expiresAt) || existingLock.expiresAt <= now) {
+      const candidateLock = {
+        owner: instanceId,
+        expiresAt: now + RATE_LIMIT_LOCK_TIMEOUT_MS,
+      };
+      writeStoredRateLimitLock(hostname, candidateLock);
+      const confirmedLock = readStoredRateLimitLock(hostname);
+      if (confirmedLock?.owner === instanceId && confirmedLock.expiresAt === candidateLock.expiresAt) {
+        return;
+      }
+    }
+
+    await wait(RATE_LIMIT_LOCK_POLL_MS);
+  }
+}
+
+function releaseStoredRateLimitLock(hostname) {
+  if (typeof GM_setValue !== 'function') {
+    return;
+  }
+
+  writeStoredRateLimitLock(hostname, {
+    owner: '',
+    expiresAt: 0,
+  });
+}
+
+async function reserveTrackerRateLimitSlot(hostname, rateLimit) {
+  while (true) {
+    let waitMs = 0;
+    await acquireStoredRateLimitLock(hostname);
+    try {
+      const now = Date.now();
+      const reservation = reserveRateLimitSlot(
+        readStoredRateLimitState(hostname),
+        rateLimit,
+        now,
+      );
+
+      writeStoredRateLimitState(hostname, reservation.state);
+      if (reservation.reserved) {
+        return;
+      }
+
+      waitMs = Math.max(0, reservation.nextAllowedAt - now);
+    } finally {
+      releaseStoredRateLimitLock(hostname);
+    }
+
+    if (waitMs > 0) {
+      await wait(waitMs);
+    }
+  }
+}
+
+async function applyTrackerRateLimitBackoff(hostname, rateLimit, blockedUntilMs) {
+  await acquireStoredRateLimitLock(hostname);
+  try {
+    const nextState = applyRateLimitBackoff(
+      readStoredRateLimitState(hostname),
+      rateLimit,
+      blockedUntilMs,
+      Date.now(),
+    );
+    writeStoredRateLimitState(hostname, nextState);
+  } finally {
+    releaseStoredRateLimitLock(hostname);
+  }
+}
+
+function performJsonRequest(url, authorizationHeader, onRateLimitHit) {
   return new Promise((resolve, reject) => {
     GM_xmlhttpRequest({
       method: 'GET',
@@ -245,7 +371,9 @@ function performJsonRequest(url, authorizationHeader) {
       },
       onload(response) {
         if (response.status === 429) {
-          reject(new Error('Tracker rate limit reached'));
+          Promise.resolve(onRateLimitHit?.(response)).finally(() => {
+            reject(new Error('Tracker rate limit reached'));
+          });
           return;
         }
 
@@ -284,12 +412,28 @@ function performJsonRequest(url, authorizationHeader) {
 // Serialize requests per tracker host so manual chart checks cannot burst fast enough to trip bans.
 function requestJson(url, authorizationHeader) {
   const hostname = new URL(url).hostname;
+  const tracker = trackerByHost.get(hostname);
   const previousRequest = trackerQueueByHost.get(hostname) ?? Promise.resolve();
   const nextRequest = previousRequest
     .catch(() => {})
     .then(async () => {
-      await waitForTrackerWindow(hostname);
-      return performJsonRequest(url, authorizationHeader);
+      if (tracker?.rateLimit) {
+        await reserveTrackerRateLimitSlot(hostname, tracker.rateLimit);
+      }
+
+      return performJsonRequest(
+        url,
+        authorizationHeader,
+        async response => {
+          if (!tracker?.rateLimit) {
+            return;
+          }
+
+          const blockedUntilMs = parseRetryAfterMs(response?.responseHeaders, Date.now())
+            || (Date.now() + tracker.rateLimit.windowMs);
+          await applyTrackerRateLimitBackoff(hostname, tracker.rateLimit, blockedUntilMs);
+        },
+      );
     });
 
   trackerQueueByHost.set(hostname, nextRequest.then(() => undefined, () => undefined));

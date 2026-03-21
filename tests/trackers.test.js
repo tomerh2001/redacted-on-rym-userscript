@@ -115,6 +115,20 @@ test('OPS auth header helper prefers the token prefix', () => {
   assert.equal(ops.buildAuthorizationHeader('token abc123'), 'token abc123');
 });
 
+test('tracker configs include the documented RED and OPS API rate limits', () => {
+  const red = TRACKERS.find(tracker => tracker.id === 'red');
+  const ops = TRACKERS.find(tracker => tracker.id === 'ops');
+
+  assert.deepEqual(red.rateLimit, {
+    maxRequests: 10,
+    windowMs: 10_000,
+  });
+  assert.deepEqual(ops.rateLimit, {
+    maxRequests: 5,
+    windowMs: 10_000,
+  });
+});
+
 test('scoreGroupMatch prefers exact-ish title and artist matches', () => {
   assert.equal(scoreGroupMatch({
     groupName: 'Trying Times',
