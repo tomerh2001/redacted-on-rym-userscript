@@ -18,12 +18,19 @@ const RATE_LIMIT_STATE_STORAGE_PREFIX = 'trackerRateLimitState:';
 const RATE_LIMIT_LOCK_STORAGE_PREFIX = 'trackerRateLimitLock:';
 const RATE_LIMIT_LOCK_TIMEOUT_MS = 5_000;
 const RATE_LIMIT_LOCK_POLL_MS = 100;
+const PAGE_REFRESH_DEBOUNCE_MS = 125;
 
 const trackerByHost = new Map(TRACKERS.map(tracker => [tracker.apiHost, tracker]));
 const trackerQueueByHost = new Map();
 let fallbackLookupCache = {};
 const fallbackRateLimitStateByHost = new Map();
 const instanceId = `rate-limit-${Math.random().toString(36).slice(2)}`;
+let menuCommandsRegistered = false;
+let pageLifecycleInstalled = false;
+let pageRefreshTimerId = 0;
+let activePageRunId = 0;
+let lastStartedPageKey = '';
+let lastResolvedPageKey = '';
 
 function normalizeCredential(rawValue) {
   return typeof rawValue === 'string' ? rawValue.trim() : '';
@@ -199,10 +206,15 @@ function setStoredCredential(storageKey, value) {
 }
 
 function registerMenuCommands() {
+  if (menuCommandsRegistered) {
+    return;
+  }
+
   if (typeof GM_registerMenuCommand !== 'function') {
     return;
   }
 
+  menuCommandsRegistered = true;
   for (const tracker of TRACKERS) {
     const currentCredential = getStoredCredential(tracker.credentialStorageKey);
     GM_registerMenuCommand(
@@ -531,6 +543,10 @@ function ensureBadgeHost() {
   return host;
 }
 
+function removeBadgeHost() {
+  document.querySelector(`[${BADGE_ATTR}]`)?.remove();
+}
+
 function renderBadge(state) {
   const element = state.url ? document.createElement('a') : document.createElement('span');
   element.className = `red-on-rym-chip red-on-rym-chip--${state.status}`;
@@ -695,30 +711,109 @@ function initializeChartEntries(entries) {
   }
 }
 
-async function main() {
+function getCurrentPageKey(locationObject = window.location) {
+  return `${locationObject?.pathname ?? ''}${locationObject?.search ?? ''}`;
+}
+
+function schedulePageRefresh() {
+  if (pageRefreshTimerId > 0) {
+    return;
+  }
+
+  pageRefreshTimerId = window.setTimeout(() => {
+    pageRefreshTimerId = 0;
+    void refreshCurrentPage();
+  }, PAGE_REFRESH_DEBOUNCE_MS);
+}
+
+function installPageLifecycle() {
+  if (pageLifecycleInstalled) {
+    return;
+  }
+
+  pageLifecycleInstalled = true;
+
+  const originalPushState = window.history.pushState;
+  window.history.pushState = function pushState(...args) {
+    const result = originalPushState.apply(this, args);
+    schedulePageRefresh();
+    return result;
+  };
+
+  const originalReplaceState = window.history.replaceState;
+  window.history.replaceState = function replaceState(...args) {
+    const result = originalReplaceState.apply(this, args);
+    schedulePageRefresh();
+    return result;
+  };
+
+  window.addEventListener('popstate', schedulePageRefresh);
+
+  const observerTarget = document.body ?? document.documentElement;
+  if (observerTarget) {
+    const observer = new MutationObserver(() => {
+      schedulePageRefresh();
+    });
+    observer.observe(observerTarget, {
+      childList: true,
+      subtree: true,
+    });
+  }
+}
+
+async function refreshCurrentPage() {
   addStyles();
   registerMenuCommands();
 
+  const pageKey = getCurrentPageKey(window.location);
   const chartEntries = extractChartEntries(document, window.location);
   if (chartEntries.length > 0) {
+    activePageRunId += 1;
+    lastStartedPageKey = '';
+    removeBadgeHost();
     initializeChartEntries(chartEntries);
+    lastResolvedPageKey = pageKey;
     return;
   }
 
   const metadata = extractRymPageMetadata(document, window.location);
   if (!metadata) {
+    activePageRunId += 1;
+    lastStartedPageKey = '';
+    removeBadgeHost();
+    lastResolvedPageKey = '';
     return;
   }
 
+  const existingHost = document.querySelector(`[${BADGE_ATTR}]`);
+  if (
+    existingHost?.childElementCount > 0
+    && (lastResolvedPageKey === pageKey || lastStartedPageKey === pageKey)
+  ) {
+    ensureBadgeHost();
+    return;
+  }
+
+  const runId = ++activePageRunId;
+  lastStartedPageKey = pageKey;
   updateBadges(buildInitialStates(metadata));
-  updateBadges(await resolveTrackerStates(metadata));
+  try {
+    const resolvedStates = await resolveTrackerStates(metadata);
+    if (runId !== activePageRunId || getCurrentPageKey(window.location) !== pageKey) {
+      return;
+    }
+
+    updateBadges(resolvedStates);
+    lastResolvedPageKey = pageKey;
+  } catch {
+    if (runId !== activePageRunId || getCurrentPageKey(window.location) !== pageKey) {
+      return;
+    }
+
+    updateBadges(TRACKERS.map(buildUnexpectedErrorState));
+    lastResolvedPageKey = pageKey;
+  }
 }
 
-main().catch(() => {
-  const metadata = extractRymPageMetadata(document, window.location);
-  if (!metadata) {
-    return;
-  }
-
-  updateBadges(TRACKERS.map(buildUnexpectedErrorState));
-});
+installPageLifecycle();
+void refreshCurrentPage();

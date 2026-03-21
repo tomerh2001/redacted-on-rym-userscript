@@ -35,6 +35,8 @@ The script is intentionally narrow:
   automatically.
 - On charts pages, each supported result gets its own `Show RED / OPS` button.
   Clicking that button only reveals that one result.
+- Chart buttons keep working when RYM paginates charts in place, including
+  `/charts/.../2/`-style URLs.
 - When a release page has a streaming-links row, the chips appear below it.
   Otherwise they fall back near the main heading.
 - `RED: on site` or `OPS: on site`

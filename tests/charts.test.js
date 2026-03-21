@@ -33,6 +33,7 @@ function createAnchor({
 
 test('isChartsPath only matches Rate Your Music chart paths', () => {
   assert.equal(isChartsPath('/charts/esoteric/album,ep,single/2020s/'), true);
+  assert.equal(isChartsPath('/charts/esoteric/album/1990-2010/2/'), true);
   assert.equal(isChartsPath('/release/album/james-blake/trying-times/'), false);
 });
 
