@@ -15,9 +15,10 @@ const userscriptHeader = `// ==UserScript==
 // @name         RED + OPS on RYM
 // @namespace    https://github.com/tomerh2001/redacted-on-rym-userscript
 // @version      ${packageJson.version}
-// @description  Show whether the current Rate Your Music album or artist page already exists on RED or OPS.
+// @description  Show whether the current Rate Your Music album, single, or artist page already exists on RED or OPS.
 // @author       ${packageJson.author}
 // @match        https://rateyourmusic.com/release/album/*
+// @match        https://rateyourmusic.com/release/single/*
 // @match        https://rateyourmusic.com/artist/*
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand

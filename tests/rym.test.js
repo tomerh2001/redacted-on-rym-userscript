@@ -101,6 +101,19 @@ test('parseReleasePath extracts album metadata from a RYM album URL', () => {
   });
 });
 
+test('parseReleasePath extracts single metadata from a RYM single URL', () => {
+  assert.deepEqual(
+    parseReleasePath('/release/single/crocheted-doughnut-ring/two-little-ladies-azalea-and-rhododendron-nice/'),
+    {
+      releaseKind: 'single',
+      artistSlug: 'crocheted-doughnut-ring',
+      titleSlug: 'two-little-ladies-azalea-and-rhododendron-nice',
+      artistGuess: 'Crocheted Doughnut Ring',
+      titleGuess: 'Two Little Ladies Azalea And Rhododendron Nice',
+    },
+  );
+});
+
 test('parseArtistPath extracts artist metadata from a RYM artist URL', () => {
   assert.deepEqual(parseArtistPath('/artist/anna-zak/'), {
     artistSlug: 'anna-zak',
@@ -234,4 +247,30 @@ test('extractRymPageMetadata reads artist pages from title and heading fallbacks
     pageKind: 'artist',
     artist: 'Anna Zak',
   });
+});
+
+test('extractRymPageMetadata accepts supported non-album release types like singles', () => {
+  const doc = {
+    title: 'Two Little Ladies / Azalea and Rhododendron / Nice by Crocheted Doughnut Ring (Single): Reviews, Ratings, Credits - Rate Your Music',
+    querySelector() {
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+  };
+
+  assert.deepEqual(
+    extractRymPageMetadata(
+      doc,
+      { pathname: '/release/single/crocheted-doughnut-ring/two-little-ladies-azalea-and-rhododendron-nice/' },
+    ),
+    {
+      pageKind: 'release',
+      releaseKind: 'single',
+      artist: 'Crocheted Doughnut Ring',
+      title: 'Two Little Ladies / Azalea and Rhododendron / Nice',
+      year: null,
+    },
+  );
 });

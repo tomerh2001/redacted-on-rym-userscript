@@ -1,12 +1,13 @@
 # RED + OPS on RYM
 
 Violentmonkey userscript that adds compact RED and OPS status badges to Rate
-Your Music album release and artist pages so you can see whether the matching
-release or artist is already on either tracker without leaving RYM.
+Your Music album release, single release, and artist pages so you can see
+whether the matching release or artist is already on either tracker without
+leaving RYM.
 
 The current scope stays intentionally focused:
 
-- RYM album release and artist pages
+- RYM album release, single release, and artist pages
 - RED and OPS lookup through their documented browse and artist APIs
 - up to one request per configured tracker on each page view
 - badge placement directly below the Apple Music / Spotify / other streaming links row when present on release pages, with a heading fallback on artist or simpler pages
@@ -84,9 +85,14 @@ Then open:
 
 or:
 
+`http://127.0.0.1:4173/release/single/crocheted-doughnut-ring/two-little-ladies-azalea-and-rhododendron-nice/`
+
+or:
+
 `http://127.0.0.1:4173/artist/anna-zak/`
 
 The fixtures preload mock RED and OPS credentials plus mocked tracker API
 responses. The release fixture should render `RED on site` and `OPS not found`
-directly below the media-links row, while the artist fixture should render the
-same states using the artist-page heading fallback.
+directly below the media-links row on both album and single pages, while the
+artist fixture should render the same states using the artist-page heading
+fallback.

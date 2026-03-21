@@ -20,6 +20,14 @@ const metadata = {
   year: 2013,
 };
 
+const singleMetadata = {
+  pageKind: 'release',
+  releaseKind: 'single',
+  artist: 'Crocheted Doughnut Ring',
+  title: 'Two Little Ladies / Azalea and Rhododendron / Nice',
+  year: 2009,
+};
+
 const artistMetadata = {
   pageKind: 'artist',
   artist: 'Anna Zak',
@@ -44,6 +52,15 @@ test('buildBrowseUrl encodes the expected OPS browse search parameters', () => {
   assert.equal(url.searchParams.get('artistname'), 'James Blake');
   assert.equal(url.searchParams.get('groupname'), 'Trying Times');
   assert.equal(url.searchParams.get('releasetype'), '1');
+});
+
+test('buildBrowseUrl maps singles to the tracker single release type', () => {
+  const red = TRACKERS.find(tracker => tracker.id === 'red');
+  const url = new URL(buildBrowseUrl(red, singleMetadata));
+  assert.equal(url.searchParams.get('artistname'), 'Crocheted Doughnut Ring');
+  assert.equal(url.searchParams.get('groupname'), 'Two Little Ladies / Azalea and Rhododendron / Nice');
+  assert.equal(url.searchParams.get('releasetype'), '9');
+  assert.equal(url.searchParams.get('year'), '2009');
 });
 
 test('buildSearchPageUrl links to the equivalent manual tracker search', () => {

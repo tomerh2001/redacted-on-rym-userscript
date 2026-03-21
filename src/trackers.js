@@ -2,6 +2,7 @@ import { normalizeMatchKey } from './rym.js';
 
 const RELEASE_TYPE_IDS = {
   album: '1',
+  single: '9',
 };
 
 export const TRACKERS = [

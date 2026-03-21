@@ -54,6 +54,10 @@ function readHeadingText(doc = document) {
   return normalizeWhitespace(doc.querySelector('h1')?.textContent ?? '');
 }
 
+function isSupportedReleaseKind(releaseKind) {
+  return releaseKind === 'album' || releaseKind === 'single';
+}
+
 export function decodeRymSlug(slug) {
   if (typeof slug !== 'string' || !slug.trim()) {
     return null;
@@ -248,7 +252,7 @@ export function findBadgeMount(doc = document) {
 
 function extractReleaseMetadata(doc = document, locationObject = window.location) {
   const pathInfo = parseReleasePath(locationObject?.pathname ?? '');
-  if (!pathInfo || pathInfo.releaseKind !== 'album') {
+  if (!pathInfo || !isSupportedReleaseKind(pathInfo.releaseKind)) {
     return null;
   }
 

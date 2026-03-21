@@ -2,9 +2,10 @@
 // @name         RED + OPS on RYM
 // @namespace    https://github.com/tomerh2001/redacted-on-rym-userscript
 // @version      1.0.0
-// @description  Show whether the current Rate Your Music album or artist page already exists on RED or OPS.
+// @description  Show whether the current Rate Your Music album, single, or artist page already exists on RED or OPS.
 // @author       Tomer Horowitz
 // @match        https://rateyourmusic.com/release/album/*
+// @match        https://rateyourmusic.com/release/single/*
 // @match        https://rateyourmusic.com/artist/*
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
@@ -53,6 +54,9 @@
   }
   function readHeadingText(doc = document) {
     return normalizeWhitespace(doc.querySelector("h1")?.textContent ?? "");
+  }
+  function isSupportedReleaseKind(releaseKind) {
+    return releaseKind === "album" || releaseKind === "single";
   }
   function decodeRymSlug(slug) {
     if (typeof slug !== "string" || !slug.trim()) {
@@ -203,7 +207,7 @@
   }
   function extractReleaseMetadata(doc = document, locationObject = window.location) {
     const pathInfo = parseReleasePath(locationObject?.pathname ?? "");
-    if (!pathInfo || pathInfo.releaseKind !== "album") {
+    if (!pathInfo || !isSupportedReleaseKind(pathInfo.releaseKind)) {
       return null;
     }
     const titleMeta = readPageTitle(doc);
@@ -237,7 +241,8 @@
 
   // src/trackers.js
   var RELEASE_TYPE_IDS = {
-    album: "1"
+    album: "1",
+    single: "9"
   };
   var TRACKERS = [
     {
