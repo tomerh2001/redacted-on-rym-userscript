@@ -1,19 +1,19 @@
 # RED + OPS on RYM
 
-Violentmonkey userscript that adds compact RED and OPS status badges to Rate
-Your Music album, EP, single, and artist pages, plus per-result reveal buttons
-on charts pages, so you can see whether the matching release or artist is
-already on either tracker without leaving RYM.
+Violentmonkey userscript that shows whether the current RYM release, artist, or
+revealed chart result already has a match on RED or OPS.
 
-The current scope stays intentionally focused:
+Current behavior:
 
-- RYM album release, EP release, single release, and artist pages
-- RYM charts pages with manual per-result reveal buttons
-- RED and OPS lookup through their documented browse and artist APIs
-- automatic lookup on release and artist pages
-- manual per-result lookup on charts pages only when you click reveal
-- per-tracker request spacing to avoid bursty chart-page lookups
-- badge placement directly below the Apple Music / Spotify / other streaming links row when present on release pages, with a heading fallback on artist or simpler pages
+- Release pages: automatic chips on album, EP, and single pages
+- Artist pages: automatic chips on artist pages
+- Charts pages: per-result `Show RED / OPS` button instead of automatic lookups
+- Trackers: RED and OPS only
+- Lookups: documented tracker API endpoints only
+- Rate protection: requests are serialized per tracker with spacing between them
+
+The charts behavior is intentionally manual so opening a chart page does not try
+to look up every result and hammer RED or OPS.
 
 ## Install
 
@@ -28,6 +28,12 @@ The current scope stays intentionally focused:
 
 ## Behavior
 
+- On release and artist pages, the script looks up the current page
+  automatically.
+- On charts pages, each supported result gets its own `Show RED / OPS` button.
+  Clicking that button only reveals that one result.
+- When a release page has a streaming-links row, the chips appear below it.
+  Otherwise they fall back near the main heading.
 - `RED: on site` or `OPS: on site`
   The script found a likely exact group or artist match and links straight to it.
 - `RED: not found` or `OPS: not found`
@@ -40,6 +46,14 @@ The current scope stays intentionally focused:
 - `Show RED / OPS`
   On RYM charts pages, the script adds a reveal button for each supported result
   and only checks that single result after you click it.
+
+Current matching rules:
+
+- Release matching uses the tracker browse API
+- Artist matching uses the tracker artist API
+- Supported release kinds are album, EP, and single
+- Charts support is release-result only; it looks for RYM release links already
+  present on the page and does not bulk-scan the whole chart automatically
 
 ## Development
 
