@@ -564,9 +564,11 @@
     [${CHART_BADGE_ATTR}] {
       display: flex;
       align-items: center;
+      justify-content: flex-end;
       flex-wrap: wrap;
       gap: 10px;
       margin-top: 10px;
+      width: 100%;
       pointer-events: none;
     }
 
