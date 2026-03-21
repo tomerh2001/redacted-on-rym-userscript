@@ -13,6 +13,8 @@ The script is intentionally narrow:
 - it uses documented tracker API endpoints only
 - it rate-limits itself to RED `10 requests / 10 seconds` and OPS
   `5 requests / 10 seconds`, with built-in backoff after `429`
+- it caches successful lookup results locally so repeat visits do not keep
+  spending tracker requests
 
 ## Install
 

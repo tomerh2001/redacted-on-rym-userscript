@@ -317,6 +317,59 @@
     return [...bestEntriesByKey.values()].map(({ score, ...entry }) => entry);
   }
 
+  // src/lookup-cache.js
+  var LOOKUP_RESULT_TTL_MS = {
+    found: 12 * 60 * 60 * 1e3,
+    missing: 60 * 60 * 1e3
+  };
+  function buildLookupCacheKey(tracker, metadata) {
+    const trackerId = tracker?.id ?? "";
+    const pageKind = metadata?.pageKind ?? "";
+    const artistKey = normalizeMatchKey(metadata?.artist);
+    if (pageKind === "artist") {
+      return [trackerId, pageKind, artistKey].join("|");
+    }
+    return [
+      trackerId,
+      pageKind,
+      metadata?.releaseKind ?? "",
+      artistKey,
+      normalizeMatchKey(metadata?.title),
+      Number.isFinite(metadata?.year) ? String(metadata.year) : ""
+    ].join("|");
+  }
+  function getLookupResultCacheTtlMs(status) {
+    return LOOKUP_RESULT_TTL_MS[status] ?? 0;
+  }
+  function isLookupResultCacheable(result) {
+    return getLookupResultCacheTtlMs(result?.status) > 0;
+  }
+  function normalizeLookupCache(rawCache, nowMs, maxEntries) {
+    const entries = Object.entries(rawCache ?? {}).filter(([key, entry]) => {
+      if (!key || !entry || typeof entry !== "object") {
+        return false;
+      }
+      const storedAt = Number(entry.storedAt);
+      const expiresAt = Number(entry.expiresAt);
+      if (!Number.isFinite(storedAt) || !Number.isFinite(expiresAt) || expiresAt <= nowMs) {
+        return false;
+      }
+      return isLookupResultCacheable(entry.result);
+    }).sort((left, right) => Number(right[1].storedAt) - Number(left[1].storedAt));
+    return Object.fromEntries(entries.slice(0, maxEntries));
+  }
+  function createLookupCacheEntry(result, nowMs) {
+    return {
+      storedAt: nowMs,
+      expiresAt: nowMs + getLookupResultCacheTtlMs(result.status),
+      result: {
+        status: result.status,
+        title: result.title ?? "",
+        url: result.url ?? ""
+      }
+    };
+  }
+
   // src/rate-limit.js
   function normalizeRateLimitState(rawState, nowMs, rateLimit) {
     const recentRequestTimes = Array.isArray(rawState?.recentRequestTimes) ? rawState.recentRequestTimes.filter((timestamp) => Number.isFinite(timestamp)).filter((timestamp) => timestamp > nowMs - rateLimit.windowMs).sort((left, right) => left - right) : [];
@@ -590,12 +643,15 @@
   var STYLE_ID = "red-on-rym-styles";
   var BADGE_ATTR = "data-red-on-rym-badge";
   var CHART_BADGE_ATTR = "data-red-on-rym-chart-badge";
+  var LOOKUP_CACHE_STORAGE_KEY = "trackerLookupCache";
+  var LOOKUP_CACHE_MAX_ENTRIES = 250;
   var RATE_LIMIT_STATE_STORAGE_PREFIX = "trackerRateLimitState:";
   var RATE_LIMIT_LOCK_STORAGE_PREFIX = "trackerRateLimitLock:";
   var RATE_LIMIT_LOCK_TIMEOUT_MS = 5e3;
   var RATE_LIMIT_LOCK_POLL_MS = 100;
   var trackerByHost = new Map(TRACKERS.map((tracker) => [tracker.apiHost, tracker]));
   var trackerQueueByHost = /* @__PURE__ */ new Map();
+  var fallbackLookupCache = {};
   var fallbackRateLimitStateByHost = /* @__PURE__ */ new Map();
   var instanceId = `rate-limit-${Math.random().toString(36).slice(2)}`;
   function normalizeCredential(rawValue) {
@@ -824,6 +880,46 @@
       return;
     }
     GM_setValue(getTrackerRateLimitStateStorageKey(hostname), JSON.stringify(state));
+  }
+  function readStoredLookupCache() {
+    if (typeof GM_getValue !== "function") {
+      return fallbackLookupCache;
+    }
+    return parseStoredJson(GM_getValue(LOOKUP_CACHE_STORAGE_KEY, ""), {});
+  }
+  function writeStoredLookupCache(cache) {
+    if (typeof GM_setValue !== "function") {
+      fallbackLookupCache = cache;
+      return;
+    }
+    GM_setValue(LOOKUP_CACHE_STORAGE_KEY, JSON.stringify(cache));
+  }
+  function readCachedLookupResult(tracker, metadata) {
+    const cacheKey = buildLookupCacheKey(tracker, metadata);
+    const rawCache = readStoredLookupCache();
+    const entry = rawCache?.[cacheKey];
+    const nowMs = Date.now();
+    if (entry && Number.isFinite(entry.expiresAt) && entry.expiresAt > nowMs && isLookupResultCacheable(entry.result)) {
+      return entry.result;
+    }
+    if (entry) {
+      const normalizedCache = normalizeLookupCache(rawCache, nowMs, LOOKUP_CACHE_MAX_ENTRIES);
+      writeStoredLookupCache(normalizedCache);
+    }
+    return null;
+  }
+  function writeCachedLookupResult(tracker, metadata, result) {
+    if (!isLookupResultCacheable(result)) {
+      return;
+    }
+    const nowMs = Date.now();
+    const rawCache = readStoredLookupCache();
+    const cacheKey = buildLookupCacheKey(tracker, metadata);
+    const normalizedCache = normalizeLookupCache({
+      ...rawCache,
+      [cacheKey]: createLookupCacheEntry(result, nowMs)
+    }, nowMs, LOOKUP_CACHE_MAX_ENTRIES);
+    writeStoredLookupCache(normalizedCache);
   }
   function readStoredRateLimitLock(hostname) {
     if (typeof GM_getValue !== "function") {
@@ -1061,7 +1157,18 @@
           return buildConfigState(tracker);
         }
         try {
+          const cachedLookupResult = readCachedLookupResult(tracker, metadata);
+          if (cachedLookupResult) {
+            return {
+              trackerLabel: tracker.label,
+              status: cachedLookupResult.status,
+              label: cachedLookupResult.status === "found" ? "on site" : "not found",
+              title: cachedLookupResult.title,
+              url: cachedLookupResult.url
+            };
+          }
           const lookupResult = await lookupOnTracker(tracker, metadata, credential, requestJson);
+          writeCachedLookupResult(tracker, metadata, lookupResult);
           return {
             trackerLabel: tracker.label,
             status: lookupResult.status,

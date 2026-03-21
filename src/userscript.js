@@ -1,4 +1,10 @@
 import { extractChartEntries } from './charts.js';
+import {
+  buildLookupCacheKey,
+  createLookupCacheEntry,
+  isLookupResultCacheable,
+  normalizeLookupCache,
+} from './lookup-cache.js';
 import { applyRateLimitBackoff, parseRetryAfterMs, reserveRateLimitSlot } from './rate-limit.js';
 import { TRACKERS, lookupOnTracker } from './trackers.js';
 import { extractRymPageMetadata, findBadgeMount } from './rym.js';
@@ -6,6 +12,8 @@ import { extractRymPageMetadata, findBadgeMount } from './rym.js';
 const STYLE_ID = 'red-on-rym-styles';
 const BADGE_ATTR = 'data-red-on-rym-badge';
 const CHART_BADGE_ATTR = 'data-red-on-rym-chart-badge';
+const LOOKUP_CACHE_STORAGE_KEY = 'trackerLookupCache';
+const LOOKUP_CACHE_MAX_ENTRIES = 250;
 const RATE_LIMIT_STATE_STORAGE_PREFIX = 'trackerRateLimitState:';
 const RATE_LIMIT_LOCK_STORAGE_PREFIX = 'trackerRateLimitLock:';
 const RATE_LIMIT_LOCK_TIMEOUT_MS = 5_000;
@@ -13,6 +21,7 @@ const RATE_LIMIT_LOCK_POLL_MS = 100;
 
 const trackerByHost = new Map(TRACKERS.map(tracker => [tracker.apiHost, tracker]));
 const trackerQueueByHost = new Map();
+let fallbackLookupCache = {};
 const fallbackRateLimitStateByHost = new Map();
 const instanceId = `rate-limit-${Math.random().toString(36).slice(2)}`;
 
@@ -262,6 +271,61 @@ function writeStoredRateLimitState(hostname, state) {
   }
 
   GM_setValue(getTrackerRateLimitStateStorageKey(hostname), JSON.stringify(state));
+}
+
+function readStoredLookupCache() {
+  if (typeof GM_getValue !== 'function') {
+    return fallbackLookupCache;
+  }
+
+  return parseStoredJson(GM_getValue(LOOKUP_CACHE_STORAGE_KEY, ''), {});
+}
+
+function writeStoredLookupCache(cache) {
+  if (typeof GM_setValue !== 'function') {
+    fallbackLookupCache = cache;
+    return;
+  }
+
+  GM_setValue(LOOKUP_CACHE_STORAGE_KEY, JSON.stringify(cache));
+}
+
+function readCachedLookupResult(tracker, metadata) {
+  const cacheKey = buildLookupCacheKey(tracker, metadata);
+  const rawCache = readStoredLookupCache();
+  const entry = rawCache?.[cacheKey];
+  const nowMs = Date.now();
+
+  if (
+    entry
+    && Number.isFinite(entry.expiresAt)
+    && entry.expiresAt > nowMs
+    && isLookupResultCacheable(entry.result)
+  ) {
+    return entry.result;
+  }
+
+  if (entry) {
+    const normalizedCache = normalizeLookupCache(rawCache, nowMs, LOOKUP_CACHE_MAX_ENTRIES);
+    writeStoredLookupCache(normalizedCache);
+  }
+
+  return null;
+}
+
+function writeCachedLookupResult(tracker, metadata, result) {
+  if (!isLookupResultCacheable(result)) {
+    return;
+  }
+
+  const nowMs = Date.now();
+  const rawCache = readStoredLookupCache();
+  const cacheKey = buildLookupCacheKey(tracker, metadata);
+  const normalizedCache = normalizeLookupCache({
+    ...rawCache,
+    [cacheKey]: createLookupCacheEntry(result, nowMs),
+  }, nowMs, LOOKUP_CACHE_MAX_ENTRIES);
+  writeStoredLookupCache(normalizedCache);
 }
 
 function readStoredRateLimitLock(hostname) {
@@ -545,7 +609,19 @@ async function resolveTrackerStates(metadata) {
       }
 
       try {
+        const cachedLookupResult = readCachedLookupResult(tracker, metadata);
+        if (cachedLookupResult) {
+          return {
+            trackerLabel: tracker.label,
+            status: cachedLookupResult.status,
+            label: cachedLookupResult.status === 'found' ? 'on site' : 'not found',
+            title: cachedLookupResult.title,
+            url: cachedLookupResult.url,
+          };
+        }
+
         const lookupResult = await lookupOnTracker(tracker, metadata, credential, requestJson);
+        writeCachedLookupResult(tracker, metadata, lookupResult);
         return {
           trackerLabel: tracker.label,
           status: lookupResult.status,
