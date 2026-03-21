@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RED + OPS on RYM
 // @namespace    https://github.com/tomerh2001/redacted-on-rym-userscript
-// @version      1.1.0
+// @version      1.1.1
 // @description  Show whether the current Rate Your Music album, single, or artist page already exists on RED or OPS.
 // @author       Tomer Horowitz
 // @match        https://rateyourmusic.com/release/album/*
